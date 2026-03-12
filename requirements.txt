@@ -1,0 +1,4 @@
+# Minimal dependencies required to run the bot
+pyTelegramBotAPI>=4.0.0
+openai>=1.0.0
+longbridge>=4.0.0
