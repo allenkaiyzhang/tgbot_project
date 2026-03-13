@@ -1,77 +1,86 @@
-﻿"""Centralized runtime config loaded from env vars and .env."""
+"""Project configuration loaded from OS environment and optional .env file.
+
+Load priority:
+1) OS environment variables
+2) Local .env file
+3) In-file placeholder defaults
+"""
+
+from __future__ import annotations
 
 import os
 
 
 def _load_dotenv(path: str = ".env") -> dict[str, str]:
-    """Load KEY=VALUE entries from a local .env file."""
+    """Load KEY=VALUE pairs from a .env file."""
 
     if not os.path.exists(path):
         return {}
 
     env: dict[str, str] = {}
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
+    with open(path, "r", encoding="utf-8") as file:
+        for raw_line in file:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
                 continue
-            if "=" not in line:
-                continue
-            key, val = line.split("=", 1)
-            env[key.strip()] = val.strip().strip('"').strip("'")
+            key, value = line.split("=", 1)
+            env[key.strip()] = value.strip().strip('"').strip("'")
     return env
 
 
 def _split_csv(value: str) -> list[str]:
-    """Split comma-separated env values into a clean list."""
+    """Split comma-separated string into a stripped list."""
 
     if not value:
         return []
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
-# Placeholder defaults (env vars or .env should override these).
-_DEFAULT_TELEGRAM_BOT_TOKEN = "YOUR_BOT_TOKEN"
-_DEFAULT_DEEPSEEK_API_KEY = "YOUR_DEEPSEEK_API_KEY"
-_DEFAULT_LONGBRIDGE_CLIENT_ID = "YOUR_LONGBRIDGE_CLIENT_ID"
-_DEFAULT_GMAIL_SENDER = "YOUR_GMAIL_ADDRESS"
-_DEFAULT_GMAIL_APP_PASSWORD = "YOUR_GMAIL_APP_PASSWORD"
-_DEFAULT_GMAIL_TO = ""
-_DEFAULT_GMAIL_CC = ""
+def _resolve(key: str, default: str, dotenv: dict[str, str]) -> str:
+    """Resolve a setting value by priority: os env > .env > default."""
 
-_dotenv = _load_dotenv(".env")
+    return os.getenv(key, dotenv.get(key, default))
 
-# Priority: OS env > .env > placeholder default
-TELEGRAM_BOT_TOKEN = os.getenv(
-    "TELEGRAM_BOT_TOKEN",
-    _dotenv.get("TELEGRAM_BOT_TOKEN", _DEFAULT_TELEGRAM_BOT_TOKEN),
-)
-DEEPSEEK_API_KEY = os.getenv(
-    "DEEPSEEK_API_KEY",
-    _dotenv.get("DEEPSEEK_API_KEY", _DEFAULT_DEEPSEEK_API_KEY),
-)
-LONGBRIDGE_CLIENT_ID = os.getenv(
-    "LONGBRIDGE_CLIENT_ID",
-    _dotenv.get("LONGBRIDGE_CLIENT_ID", _DEFAULT_LONGBRIDGE_CLIENT_ID),
-)
-GMAIL_SENDER = os.getenv(
-    "GMAIL_SENDER",
-    _dotenv.get("GMAIL_SENDER", _DEFAULT_GMAIL_SENDER),
-)
-GMAIL_APP_PASSWORD = os.getenv(
-    "GMAIL_APP_PASSWORD",
-    _dotenv.get("GMAIL_APP_PASSWORD", _DEFAULT_GMAIL_APP_PASSWORD),
-)
-GMAIL_TO = os.getenv(
-    "GMAIL_TO",
-    _dotenv.get("GMAIL_TO", _DEFAULT_GMAIL_TO),
-)
-GMAIL_CC = os.getenv(
-    "GMAIL_CC",
-    _dotenv.get("GMAIL_CC", _DEFAULT_GMAIL_CC),
-)
 
+_DOTENV = _load_dotenv(".env")
+
+# Placeholder defaults.
+_DEFAULTS = {
+    "TELEGRAM_BOT_TOKEN": "YOUR_BOT_TOKEN",
+    "DEEPSEEK_API_KEY": "YOUR_DEEPSEEK_API_KEY",
+    "LONGBRIDGE_CLIENT_ID": "YOUR_LONGBRIDGE_CLIENT_ID",
+    "GMAIL_SENDER": "YOUR_GMAIL_ADDRESS",
+    "GMAIL_APP_PASSWORD": "YOUR_GMAIL_APP_PASSWORD",
+    "GMAIL_TO": "",
+    "GMAIL_CC": "",
+}
+
+# Core app settings.
+TELEGRAM_BOT_TOKEN = _resolve("TELEGRAM_BOT_TOKEN", _DEFAULTS["TELEGRAM_BOT_TOKEN"], _DOTENV)
+DEEPSEEK_API_KEY = _resolve("DEEPSEEK_API_KEY", _DEFAULTS["DEEPSEEK_API_KEY"], _DOTENV)
+LONGBRIDGE_CLIENT_ID = _resolve("LONGBRIDGE_CLIENT_ID", _DEFAULTS["LONGBRIDGE_CLIENT_ID"], _DOTENV)
+
+# Gmail settings.
+GMAIL_SENDER = _resolve("GMAIL_SENDER", _DEFAULTS["GMAIL_SENDER"], _DOTENV)
+GMAIL_APP_PASSWORD = _resolve("GMAIL_APP_PASSWORD", _DEFAULTS["GMAIL_APP_PASSWORD"], _DOTENV)
+GMAIL_TO = _resolve("GMAIL_TO", _DEFAULTS["GMAIL_TO"], _DOTENV)
+GMAIL_CC = _resolve("GMAIL_CC", _DEFAULTS["GMAIL_CC"], _DOTENV)
 GMAIL_TO_LIST = _split_csv(GMAIL_TO)
 GMAIL_CC_LIST = _split_csv(GMAIL_CC)
 
+# Other app defaults.
 DEFAULT_SYMBOLS = ["QQQ.US"]
+
+
+__all__ = [
+    "TELEGRAM_BOT_TOKEN",
+    "DEEPSEEK_API_KEY",
+    "LONGBRIDGE_CLIENT_ID",
+    "GMAIL_SENDER",
+    "GMAIL_APP_PASSWORD",
+    "GMAIL_TO",
+    "GMAIL_CC",
+    "GMAIL_TO_LIST",
+    "GMAIL_CC_LIST",
+    "DEFAULT_SYMBOLS",
+]
