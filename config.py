@@ -47,7 +47,7 @@ def _resolve(key: str, default: str, dotenv: dict[str, str]) -> str:
 
 _DOTENV = _load_dotenv(".env")
 
-# 占位默认值：仅在环境变量和 .env 都缺失时使用。
+# Placeholder defaults.
 _DEFAULTS = {
     "TELEGRAM_BOT_TOKEN": "YOUR_BOT_TOKEN",
     "DEEPSEEK_API_KEY": "YOUR_DEEPSEEK_API_KEY",
@@ -56,14 +56,18 @@ _DEFAULTS = {
     "GMAIL_APP_PASSWORD": "YOUR_GMAIL_APP_PASSWORD",
     "GMAIL_TO": "",
     "GMAIL_CC": "",
+    # ChatGPT-compatible gateway settings (OpenAI format).
+    "CHATGPT_API_KEY": "",
+    "CHATGPT_BASE_URL": "https://burn.hair/v1",
+    "CHATGPT_MODEL": "gpt-5.2",
 }
 
-# 核心配置：优先读取系统环境变量，其次 .env，最后默认值。
+# Core app settings.
 TELEGRAM_BOT_TOKEN = _resolve("TELEGRAM_BOT_TOKEN", _DEFAULTS["TELEGRAM_BOT_TOKEN"], _DOTENV)
 DEEPSEEK_API_KEY = _resolve("DEEPSEEK_API_KEY", _DEFAULTS["DEEPSEEK_API_KEY"], _DOTENV)
 LONGBRIDGE_CLIENT_ID = _resolve("LONGBRIDGE_CLIENT_ID", _DEFAULTS["LONGBRIDGE_CLIENT_ID"], _DOTENV)
 
-# Gmail 相关配置（用于函数调用通知邮件与手工测试邮件）。
+# Gmail settings.
 GMAIL_SENDER = _resolve("GMAIL_SENDER", _DEFAULTS["GMAIL_SENDER"], _DOTENV)
 GMAIL_APP_PASSWORD = _resolve("GMAIL_APP_PASSWORD", _DEFAULTS["GMAIL_APP_PASSWORD"], _DOTENV)
 GMAIL_TO = _resolve("GMAIL_TO", _DEFAULTS["GMAIL_TO"], _DOTENV)
@@ -71,7 +75,12 @@ GMAIL_CC = _resolve("GMAIL_CC", _DEFAULTS["GMAIL_CC"], _DOTENV)
 GMAIL_TO_LIST = _split_csv(GMAIL_TO)
 GMAIL_CC_LIST = _split_csv(GMAIL_CC)
 
-# 业务默认值。
+# ChatGPT-compatible gateway settings.
+CHATGPT_API_KEY = _resolve("CHATGPT_API_KEY", _DEFAULTS["CHATGPT_API_KEY"], _DOTENV)
+CHATGPT_BASE_URL = _resolve("CHATGPT_BASE_URL", _DEFAULTS["CHATGPT_BASE_URL"], _DOTENV)
+CHATGPT_MODEL = _resolve("CHATGPT_MODEL", _DEFAULTS["CHATGPT_MODEL"], _DOTENV)
+
+# Other app defaults.
 DEFAULT_SYMBOLS = ["QQQ.US"]
 
 
@@ -80,7 +89,8 @@ AuthUrlHandler = Callable[[str], None]
 
 
 def _default_auth_url_handler(url: str) -> None:
-    # OAuth 首次授权时打印链接，便于人工打开授权。
+    """Default callback for OAuth URL."""
+
     print(f"Open this URL to authorize: {url}")
 
 
@@ -111,7 +121,6 @@ def build_config_with_fallback(
     try:
         return build_oauth_config(client_id=client_id, on_auth_url=on_auth_url), "oauth"
     except Exception as oauth_error:
-        # OAuth 失败时自动回退，尽量保证服务可用。
         print(f"OAuth config failed, fallback to from_apikey_env(): {oauth_error}")
         return build_apikey_env_config(), "apikey_env"
 
@@ -126,6 +135,9 @@ __all__ = [
     "GMAIL_CC",
     "GMAIL_TO_LIST",
     "GMAIL_CC_LIST",
+    "CHATGPT_API_KEY",
+    "CHATGPT_BASE_URL",
+    "CHATGPT_MODEL",
     "DEFAULT_SYMBOLS",
     "build_oauth_config",
     "build_apikey_env_config",

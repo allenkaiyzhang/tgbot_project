@@ -1,4 +1,15 @@
-"""LongBridge 能力层：行情查询、持仓查询、结果格式化。"""
+"""LongBridge service layer.
+
+Dependencies:
+- config.py: LongBridge auth config builders (OAuth + fallback)
+- longbridge.openapi: QuoteContext/TradeContext
+
+Function groups:
+- Context builders: `setup_quote_context`, `setup_trade_context`
+- API calls: `fetch_security_quotes`, `fetch_stock_positions`
+- Format helpers: `inspect_and_call_methods`, `format_item_entry`
+- Public business APIs: `get_inspected_quotes*`, `get_stock_positions`
+"""
 
 import json
 import inspect

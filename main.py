@@ -1,4 +1,8 @@
-"""Project startup entrypoint."""
+"""Project startup entrypoint.
+
+Current routing:
+- default startup target -> telegram_bot.main
+"""
 
 from telegram_bot import main as run_telegram_bot
 

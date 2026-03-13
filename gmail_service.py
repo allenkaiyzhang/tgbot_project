@@ -1,4 +1,13 @@
-"""Reusable Gmail sending utility."""
+"""Gmail service layer.
+
+Dependencies:
+- config.py: sender account / app password / default recipients
+- smtplib + email.message: SMTP transport and MIME message building
+
+Main APIs:
+- `send_gmail`: generic send function for app usage
+- `main`: minimal local test entry
+"""
 
 from __future__ import annotations
 

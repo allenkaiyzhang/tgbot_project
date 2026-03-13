@@ -1,4 +1,17 @@
-"""Minimal Telegram bot with DeepSeek + LongBridge features."""
+"""Telegram bot application layer.
+
+Dependencies:
+- config.py: runtime settings (tokens/keys/mail settings)
+- llm_service.py: LLM calls (/askds)
+- longbridge_service.py: market data calls (/askstock)
+- gmail_service.py: usage notification emails
+
+Flow:
+1) Telegram command enters pending state
+2) Next user message triggers business handler
+3) Handler calls service layer and replies
+4) Non-empty result can trigger email notification
+"""
 
 from __future__ import annotations
 
@@ -8,8 +21,8 @@ from typing import Any
 import telebot
 
 import config
-import deepseek_service
 import longbridge_service
+import llm_service
 from gmail_service import send_gmail
 
 BOT_TOKEN = config.TELEGRAM_BOT_TOKEN
@@ -118,7 +131,7 @@ def _handle_askds_reply(message) -> bool:
     prompt = (message.text or "").strip()
     try:
         # 成功路径：先拿到 AI 回复，再做回包和通知。
-        reply = deepseek_service.get_deepseek_response(prompt)
+        reply = llm_service.get_deepseek_response(prompt)
         is_success = True
     except Exception as e:
         reply = f"askds 调用失败: {e}"
