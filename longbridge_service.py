@@ -6,7 +6,6 @@ Dependencies:
 
 Public APIs used by the bot:
 - get_inspected_quotes_text(...)
-- get_stock_positions(...)
 """
 
 from __future__ import annotations
@@ -690,18 +689,20 @@ class LB:
             return json.loads(response.read().decode("utf-8"))
 
 
-def inspect_and_call_methods(resp):
-    """Inspect SDK objects into serializable dicts.
+DEFAULT_CLIENT_ID = config.LONGBRIDGE_CLIENT_ID
+DEFAULT_SYMBOLS = config.DEFAULT_SYMBOLS
 
-    For each item:
-    - collect non-callable attributes
-    - best-effort call no-arg methods
-    """
 
-    results = []
+def get_inspected_quotes_text(client_id: str | None = None, symbols=None) -> str:
+    """Fetch quote objects, inspect them, and return pretty JSON text."""
 
+    resolved_client_id = client_id or DEFAULT_CLIENT_ID
+    resolved_symbols = list(DEFAULT_SYMBOLS if symbols is None else symbols)
+    resp = LB(client_id=resolved_client_id).quote(resolved_symbols)
+
+    inspected: list[dict[str, Any]] = []
     for item in resp:
-        item_entry = {
+        item_entry: dict[str, Any] = {
             "type": str(type(item)),
             "attributes": {},
             "methods": {},
@@ -722,8 +723,7 @@ def inspect_and_call_methods(resp):
                     item_entry["attributes"][name] = "<unprintable>"
                 continue
 
-            method_entry = {"status": None, "result": None}
-
+            method_entry: dict[str, Any] = {"status": None, "result": None}
             try:
                 sig = inspect.signature(attr)
                 params = [
@@ -753,109 +753,8 @@ def inspect_and_call_methods(resp):
 
             item_entry["methods"][name] = method_entry
 
-        results.append(item_entry)
+        inspected.append(item_entry)
 
-    return results
-
-
-def show_methods(obj) -> None:
-    """Debug helper: print callable methods on an object."""
-
-    obj_type = type(obj)
-    print(f"Object type: {obj_type}")
-
-    methods = [
-        name
-        for name in dir(obj)
-        if not (name.startswith("__") and name.endswith("__"))
-        and callable(getattr(obj, name, None))
-    ]
-
-    if not methods:
-        print("No callable methods found.")
-        return
-
-    print("Available methods:")
-    for name in methods:
-        print(f"  - {name}")
-
-
-def format_item_entry(item_entry) -> str:
-    """Format one inspected entry for readable text output."""
-
-    lines = [f"Type: {item_entry.get('type')}\n"]
-
-    attributes = item_entry.get("attributes", {})
-    if attributes:
-        lines.append("Attributes:")
-        for name, value in sorted(attributes.items()):
-            if name in ("pre_market_quote", "post_market_quote"):
-                try:
-                    parsed = json.loads(value) if isinstance(value, str) else value
-                    pretty = json.dumps(parsed, ensure_ascii=False, indent=2)
-                except Exception:
-                    pretty = str(value)
-
-                lines.append(f"  {name}:")
-                for subline in pretty.splitlines():
-                    lines.append(f"    {subline}")
-            else:
-                lines.append(f"  {name}: {value}")
-    else:
-        lines.append("Attributes: (none)")
-
-    return "\n".join(lines)
-
-
-DEFAULT_CLIENT_ID = config.LONGBRIDGE_CLIENT_ID
-DEFAULT_SYMBOLS = config.DEFAULT_SYMBOLS
-
-
-def _build_basic_client(client_id: str | None = None) -> LB:
-    """Build service client with project default client_id fallback."""
-
-    resolved_client_id = client_id or DEFAULT_CLIENT_ID
-    return LB(client_id=resolved_client_id)
-
-
-def _resolve_symbols(symbols=None) -> list[str]:
-    """Resolve symbols input to a non-empty list using project defaults."""
-
-    if symbols is None:
-        return list(DEFAULT_SYMBOLS)
-    return list(symbols)
-
-
-def get_inspected_quotes(client_id: str | None = None, symbols=None):
-    """Fetch quote objects and return inspected structured data.
-
-    This wrapper intentionally delegates to LongbridgeOpenAPIBasic.quote
-    to avoid duplicated quote-fetch logic in this module.
-    """
-
-    client = _build_basic_client(client_id=client_id)
-    resp = client.quote(_resolve_symbols(symbols))
-    return inspect_and_call_methods(resp)
-
-
-def get_stock_positions(client_id: str | None = None):
-    """Fetch stock positions via LongbridgeOpenAPIBasic."""
-
-    client = _build_basic_client(client_id=client_id)
-    return client.stock_positions()
-
-
-def get_static_info(client_id: str | None = None, symbols=None):
-    """Fetch static info via LongbridgeOpenAPIBasic."""
-
-    client = _build_basic_client(client_id=client_id)
-    return client.static_info(_resolve_symbols(symbols))
-
-
-def get_inspected_quotes_text(client_id: str | None = None, symbols=None) -> str:
-    """Return inspected quote result as pretty JSON text."""
-
-    inspected = get_inspected_quotes(client_id=client_id, symbols=symbols)
     try:
         return json.dumps(inspected, ensure_ascii=False, indent=2)
     except Exception:
@@ -863,14 +762,8 @@ def get_inspected_quotes_text(client_id: str | None = None, symbols=None) -> str
 
 
 def main() -> None:
-    """Manual debug entry for quote inspection."""
-
-    inspected = get_inspected_quotes()
-    for idx, item in enumerate(inspected, start=1):
-        print("=" * 80)
-        print(f"Item {idx}/{len(inspected)}")
-        print("=" * 80)
-        print(format_item_entry(item))
+    """Manual debug entry."""
+    pass
 
 
 if __name__ == "__main__":
