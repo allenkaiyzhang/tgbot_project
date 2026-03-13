@@ -2,20 +2,30 @@ import json
 import inspect
 
 import config
-from longbridge.openapi import QuoteContext
-from longbridge_config import build_apikey_env_config, build_config_with_fallback
+from longbridge.openapi import QuoteContext, TradeContext
 
 
 
 def setup_quote_context(client_id):
     """Set up OAuth and create a QuoteContext for fetching security quotes."""
-    quote_config, source = build_config_with_fallback(client_id=client_id)
+    quote_config, source = config.build_config_with_fallback(client_id=client_id)
     return QuoteContext(quote_config), source
+
+
+def setup_trade_context(client_id):
+    """Set up OAuth and create a TradeContext for account/trade APIs."""
+    trade_config, source = config.build_config_with_fallback(client_id=client_id)
+    return TradeContext(trade_config), source
 
 
 def fetch_security_quotes(ctx, symbols):
     """Fetch basic information of securities using the provided context."""
     return ctx.quote(symbols)
+
+
+def fetch_stock_positions(ctx):
+    """Fetch current stock positions from the provided trade context."""
+    return ctx.stock_positions()
 
 
 def inspect_and_call_methods(resp):
@@ -161,10 +171,29 @@ def get_inspected_quotes(client_id: str = None, symbols=None):
         if source != "oauth":
             raise
         print(f"OAuth quote request failed, retry with from_apikey_env(): {oauth_error}")
-        fallback_ctx = QuoteContext(build_apikey_env_config())
+        fallback_ctx = QuoteContext(config.build_apikey_env_config())
         resp = fetch_security_quotes(fallback_ctx, symbols)
     inspected = inspect_and_call_methods(resp)
     return inspected
+
+
+def get_stock_positions(client_id: str = None):
+    """Return current stock positions via LongBridge Trade API."""
+
+    if client_id is None:
+        client_id = DEFAULT_CLIENT_ID
+
+    ctx, source = setup_trade_context(client_id)
+    try:
+        resp = fetch_stock_positions(ctx)
+        return resp
+    except Exception as oauth_error:
+        if source != "oauth":
+            raise
+        print(f"OAuth positions request failed, retry with from_apikey_env(): {oauth_error}")
+        fallback_ctx = TradeContext(config.build_apikey_env_config())
+        resp = fetch_stock_positions(fallback_ctx)
+        return resp
 
 
 def get_inspected_quotes_text(client_id: str = None, symbols=None):
