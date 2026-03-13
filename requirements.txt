@@ -2,3 +2,5 @@
 pyTelegramBotAPI>=4.0.0
 openai>=1.0.0
 longbridge>=4.0.0
+
+# gmail_sender.py uses Python standard library only (no extra pip deps).
