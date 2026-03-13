@@ -21,31 +21,31 @@ bot = telebot.TeleBot(BOT_TOKEN, parse_mode=None)
 def handle_help(message):
     """Show command usage instructions."""
 
-    bot.reply_to(message, bot_flow.HELP_TEXT)
+    bot.reply_to(message, bot_flow.get_help_text())
 
 
 @bot.message_handler(commands=["askds"])
 def handle_askds(message):
     """Enter DeepSeek query mode for current chat."""
 
-    bot_flow.mark_askds_pending(message.chat.id)
-    bot.reply_to(message, bot_flow.ASKDS_PROMPT)
+    bot_flow.set_askds_pending(message.chat.id)
+    bot.reply_to(message, bot_flow.get_askds_prompt())
 
 
 @bot.message_handler(commands=["askchatgpt"])
 def handle_askchatgpt(message):
     """Enter ChatGPT query mode for current chat."""
 
-    bot_flow.mark_askchatgpt_pending(message.chat.id)
-    bot.reply_to(message, bot_flow.ASKCHATGPT_PROMPT)
+    bot_flow.set_askchatgpt_pending(message.chat.id)
+    bot.reply_to(message, bot_flow.get_askchatgpt_prompt())
 
 
 @bot.message_handler(commands=["askstock"])
 def handle_askstock(message):
     """Enter stock-query mode for current chat."""
 
-    bot_flow.mark_askstock_pending(message.chat.id)
-    bot.reply_to(message, bot_flow.ASKSTOCK_PROMPT)
+    bot_flow.set_askstock_pending(message.chat.id)
+    bot.reply_to(message, bot_flow.get_askstock_prompt())
 
 
 @bot.message_handler(func=lambda m: True)

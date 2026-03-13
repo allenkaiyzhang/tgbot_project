@@ -1,50 +1,154 @@
-"""LLM service layer.
+"""LLM service layer with provider registry.
 
-This module provides one unified function:
-`get_llm_response(...)`
-
-Supported providers:
-- `deepseek`
-- `chatgpt` (or alias `openai`) via OpenAI-compatible gateway
+Public entrypoints:
+- `get_llm_response(...)` (backward compatible function)
+- `get_service()` / `set_service()` for global service instance
+- `LLMService` class for extensible provider management
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Callable, Iterable
 
 from openai import OpenAI
 
 import config
 
-
-# Reuse clients to avoid creating new HTTP pools on every request.
-_DEEPSEEK_CLIENT = OpenAI(
-    api_key=config.DEEPSEEK_API_KEY,
-    base_url="https://api.deepseek.com",
-)
-
-_CHATGPT_CLIENT = OpenAI(
-    api_key=config.CHATGPT_API_KEY,
-    base_url=config.CHATGPT_BASE_URL,
-)
+ProviderInvoker = Callable[[str, str, str], str]
 
 
-def _normalize_provider(provider: str) -> str:
-    """Normalize provider aliases to canonical names."""
+@dataclass
+class _ProviderRuntime:
+    """Provider runtime metadata and invoker."""
 
-    normalized = provider.strip().lower()
-    if normalized in {"openai", "chatgpt"}:
-        return "chatgpt"
-    return normalized
+    default_model: str
+    invoker: ProviderInvoker
 
 
-def _resolve_client_and_model(provider: str, model: str | None) -> tuple[OpenAI, str]:
-    """Resolve client and model based on provider."""
+class LLMService:
+    """Extensible LLM service with pluggable providers."""
 
-    normalized = _normalize_provider(provider)
-    if normalized == "deepseek":
-        return _DEEPSEEK_CLIENT, model or "deepseek-chat"
-    if normalized == "chatgpt":
-        return _CHATGPT_CLIENT, model or config.CHATGPT_MODEL
-    raise ValueError(f"Unsupported provider: {provider}")
+    def __init__(self) -> None:
+        self._providers: dict[str, _ProviderRuntime] = {}
+        self._aliases: dict[str, str] = {}
+
+    @staticmethod
+    def _normalize_key(name: str) -> str:
+        normalized = name.strip().lower()
+        if not normalized:
+            raise ValueError("Provider name cannot be empty.")
+        return normalized
+
+    def register_provider(
+        self,
+        name: str,
+        *,
+        default_model: str,
+        invoker: ProviderInvoker,
+        aliases: Iterable[str] | None = None,
+    ) -> None:
+        """Register a provider with custom invocation logic."""
+
+        canonical = self._normalize_key(name)
+        self._providers[canonical] = _ProviderRuntime(default_model=default_model, invoker=invoker)
+        self._aliases[canonical] = canonical
+
+        if aliases:
+            for alias in aliases:
+                self._aliases[self._normalize_key(alias)] = canonical
+
+    def register_openai_provider(
+        self,
+        name: str,
+        *,
+        api_key: str,
+        base_url: str,
+        default_model: str,
+        aliases: Iterable[str] | None = None,
+    ) -> None:
+        """Register an OpenAI-compatible provider using `openai.OpenAI` client."""
+
+        client = OpenAI(api_key=api_key, base_url=base_url)
+
+        def _invoke(prompt: str, model: str, system_prompt: str) -> str:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt},
+                ],
+                stream=False,
+            )
+            return response.choices[0].message.content or ""
+
+        self.register_provider(
+            name,
+            default_model=default_model,
+            invoker=_invoke,
+            aliases=aliases,
+        )
+
+    def _resolve_runtime(self, provider: str) -> tuple[str, _ProviderRuntime]:
+        key = self._normalize_key(provider)
+        canonical = self._aliases.get(key, key)
+        runtime = self._providers.get(canonical)
+        if runtime is None:
+            raise ValueError(f"Unsupported provider: {provider}")
+        return canonical, runtime
+
+    def list_providers(self) -> list[str]:
+        """List canonical provider names."""
+
+        return sorted(self._providers.keys())
+
+    def get_response(
+        self,
+        prompt: str,
+        *,
+        provider: str = "deepseek",
+        model: str | None = None,
+        system_prompt: str = "You are a helpful assistant",
+    ) -> str:
+        """Call selected provider and return plain text response."""
+
+        _name, runtime = self._resolve_runtime(provider)
+        resolved_model = model or runtime.default_model
+        return runtime.invoker(prompt, resolved_model, system_prompt)
+
+
+def _build_default_service() -> LLMService:
+    service = LLMService()
+    service.register_openai_provider(
+        "deepseek",
+        api_key=config.DEEPSEEK_API_KEY,
+        base_url="https://api.deepseek.com",
+        default_model="deepseek-chat",
+    )
+    service.register_openai_provider(
+        "chatgpt",
+        api_key=config.CHATGPT_API_KEY,
+        base_url=config.CHATGPT_BASE_URL,
+        default_model=config.CHATGPT_MODEL,
+        aliases=("openai",),
+    )
+    return service
+
+
+_SERVICE = _build_default_service()
+
+
+def set_service(service: LLMService) -> None:
+    """Set global service instance."""
+
+    global _SERVICE
+    _SERVICE = service
+
+
+def get_service() -> LLMService:
+    """Get global service instance."""
+
+    return _SERVICE
 
 
 def get_llm_response(
@@ -54,25 +158,19 @@ def get_llm_response(
     model: str | None = None,
     system_prompt: str = "You are a helpful assistant",
 ) -> str:
-    """Call an LLM provider and return plain text response.
+    """Backward-compatible function wrapper."""
 
-    Args:
-        prompt: User input text.
-        provider: `deepseek`, `chatgpt`, or `openai`.
-        model: Optional model override. If omitted, provider default is used.
-        system_prompt: System role content.
-    """
-
-    client, resolved_model = _resolve_client_and_model(provider, model)
-    response = client.chat.completions.create(
-        model=resolved_model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt},
-        ],
-        stream=False,
+    return _SERVICE.get_response(
+        prompt,
+        provider=provider,
+        model=model,
+        system_prompt=system_prompt,
     )
-    return response.choices[0].message.content or ""
 
 
-__all__ = ["get_llm_response"]
+__all__ = [
+    "LLMService",
+    "get_service",
+    "set_service",
+    "get_llm_response",
+]

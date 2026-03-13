@@ -104,7 +104,7 @@ def _enum_list(enum_cls: Any, values: Optional[Iterable[Any]]) -> Optional[List[
     return [_enum_from_name(enum_cls, v) for v in values]
 
 
-class LongbridgeOpenAPIBasic:
+class LB:
     """
     Quote + Trade + News 的统一基础封装。
 
@@ -689,37 +689,6 @@ class LongbridgeOpenAPIBasic:
         with urlopen(request, timeout=self.timeout) as response:
             return json.loads(response.read().decode("utf-8"))
 
-def setup_quote_context(client_id: str | None):
-    """Create QuoteContext using OAuth-first config strategy."""
-
-    quote_config, source = config.build_config_with_fallback(client_id=client_id)
-    return QuoteContext(quote_config), source
-
-
-def setup_trade_context(client_id: str | None):
-    """Create TradeContext using OAuth-first config strategy."""
-
-    trade_config, source = config.build_config_with_fallback(client_id=client_id)
-    return TradeContext(trade_config), source
-
-
-def fetch_security_quotes(ctx: QuoteContext, symbols):
-    """Fetch quote objects for provided symbols."""
-
-    return ctx.quote(symbols)
-
-
-def fetch_stock_positions(ctx: TradeContext):
-    """Fetch current stock positions from trade account."""
-
-    return ctx.stock_positions()
-
-
-def fetch_static_info(ctx: QuoteContext, symbols):
-    """Fetch static security information for provided symbols."""
-
-    return ctx.static_info(symbols)
-
 
 def inspect_and_call_methods(resp):
     """Inspect SDK objects into serializable dicts.
@@ -842,67 +811,45 @@ DEFAULT_CLIENT_ID = config.LONGBRIDGE_CLIENT_ID
 DEFAULT_SYMBOLS = config.DEFAULT_SYMBOLS
 
 
-def get_inspected_quotes(client_id: str | None = None, symbols=None):
-    """Fetch quote objects and return inspected structured data."""
+def _build_basic_client(client_id: str | None = None) -> LB:
+    """Build service client with project default client_id fallback."""
 
-    if client_id is None:
-        client_id = DEFAULT_CLIENT_ID
+    resolved_client_id = client_id or DEFAULT_CLIENT_ID
+    return LB(client_id=resolved_client_id)
+
+
+def _resolve_symbols(symbols=None) -> list[str]:
+    """Resolve symbols input to a non-empty list using project defaults."""
+
     if symbols is None:
-        symbols = DEFAULT_SYMBOLS
+        return list(DEFAULT_SYMBOLS)
+    return list(symbols)
 
-    ctx, source = setup_quote_context(client_id)
-    try:
-        resp = fetch_security_quotes(ctx, symbols)
-    except Exception as oauth_error:
-        # Retry once with API-key env config if OAuth path failed.
-        if source != "oauth":
-            raise
-        print(f"OAuth quote request failed, retry with from_apikey_env(): {oauth_error}")
-        fallback_ctx = QuoteContext(config.build_apikey_env_config())
-        resp = fetch_security_quotes(fallback_ctx, symbols)
 
+def get_inspected_quotes(client_id: str | None = None, symbols=None):
+    """Fetch quote objects and return inspected structured data.
+
+    This wrapper intentionally delegates to LongbridgeOpenAPIBasic.quote
+    to avoid duplicated quote-fetch logic in this module.
+    """
+
+    client = _build_basic_client(client_id=client_id)
+    resp = client.quote(_resolve_symbols(symbols))
     return inspect_and_call_methods(resp)
 
 
 def get_stock_positions(client_id: str | None = None):
-    """Fetch stock positions, with OAuth fallback retry once."""
+    """Fetch stock positions via LongbridgeOpenAPIBasic."""
 
-    if client_id is None:
-        client_id = DEFAULT_CLIENT_ID
-
-    ctx, source = setup_trade_context(client_id)
-    try:
-        return fetch_stock_positions(ctx)
-    except Exception as oauth_error:
-        if source != "oauth":
-            raise
-        print(f"OAuth positions request failed, retry with from_apikey_env(): {oauth_error}")
-        fallback_ctx = TradeContext(config.build_apikey_env_config())
-        return fetch_stock_positions(fallback_ctx)
+    client = _build_basic_client(client_id=client_id)
+    return client.stock_positions()
 
 
 def get_static_info(client_id: str | None = None, symbols=None):
-    """Fetch static info with OAuth fallback retry once.
+    """Fetch static info via LongbridgeOpenAPIBasic."""
 
-    If `symbols` is not provided, reuse `DEFAULT_SYMBOLS` from config.
-    """
-
-    if client_id is None:
-        client_id = DEFAULT_CLIENT_ID
-    if symbols is None:
-        symbols = DEFAULT_SYMBOLS
-
-    ctx, source = setup_quote_context(client_id)
-    try:
-        resp = fetch_static_info(ctx, symbols)
-        return resp
-    except Exception as oauth_error:
-        if source != "oauth":
-            raise
-        print(f"OAuth static_info request failed, retry with from_apikey_env(): {oauth_error}")
-        fallback_ctx = QuoteContext(config.build_apikey_env_config())
-        resp = fetch_static_info(fallback_ctx, symbols)
-        return resp
+    client = _build_basic_client(client_id=client_id)
+    return client.static_info(_resolve_symbols(symbols))
 
 
 def get_inspected_quotes_text(client_id: str | None = None, symbols=None) -> str:
