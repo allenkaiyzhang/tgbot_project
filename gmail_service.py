@@ -1,12 +1,8 @@
 """Gmail service layer.
 
-Dependencies:
-- config.py: sender account / app password / default recipients
-- smtplib + email.message: SMTP transport and MIME message building
-
 Main APIs:
-- `send_gmail`: generic send function for app usage
-- `main`: minimal local test entry
+- send_gmail(...): reusable email sender
+- main(): minimal local self-test using config values
 """
 
 from __future__ import annotations
@@ -29,9 +25,8 @@ def send_gmail(
     cc: Iterable[str] | None = None,
     attachments: Iterable[str] | None = None,
 ) -> None:
-    """Send an email via Gmail SMTP (SSL)."""
+    """Send an email via Gmail SMTP SSL endpoint."""
 
-    # 统一转成 list，方便后续拼接收件人和发信时复用。
     to_list = list(to)
     cc_list = list(cc or [])
     attachment_list = list(attachments or [])
@@ -43,13 +38,11 @@ def send_gmail(
     msg["From"] = sender
     msg["To"] = ", ".join(to_list)
     msg["Subject"] = subject
-
     if cc_list:
         msg["Cc"] = ", ".join(cc_list)
-
     msg.set_content(body)
 
-    # 可选附件：自动根据文件名推断 MIME 类型。
+    # Add optional attachments and infer MIME type by filename.
     for file_path in attachment_list:
         path = Path(file_path)
         with path.open("rb") as file:
@@ -60,7 +53,6 @@ def send_gmail(
             maintype, subtype = mime_type.split("/", 1)
         else:
             maintype, subtype = "application", "octet-stream"
-
         msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=path.name)
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
@@ -69,9 +61,8 @@ def send_gmail(
 
 
 def main() -> None:
-    """Send a minimal test email using values from config/.env."""
+    """Send one test email using config/.env settings."""
 
-    # 最小自测入口：不传附件，只验证 SMTP 登录与发送链路。
     send_gmail(
         sender=config.GMAIL_SENDER,
         app_password=config.GMAIL_APP_PASSWORD,

@@ -1,63 +1,60 @@
 """LongBridge service layer.
 
 Dependencies:
-- config.py: LongBridge auth config builders (OAuth + fallback)
-- longbridge.openapi: QuoteContext/TradeContext
+- config.py: auth config builders (OAuth + fallback)
+- longbridge.openapi: QuoteContext / TradeContext
 
-Function groups:
-- Context builders: `setup_quote_context`, `setup_trade_context`
-- API calls: `fetch_security_quotes`, `fetch_stock_positions`
-- Format helpers: `inspect_and_call_methods`, `format_item_entry`
-- Public business APIs: `get_inspected_quotes*`, `get_stock_positions`
+Public APIs used by the bot:
+- get_inspected_quotes_text(...)
+- get_stock_positions(...)
 """
 
-import json
+from __future__ import annotations
+
 import inspect
+import json
 
 import config
 from longbridge.openapi import QuoteContext, TradeContext
 
 
+def setup_quote_context(client_id: str | None):
+    """Create QuoteContext using OAuth-first config strategy."""
 
-def setup_quote_context(client_id):
-    """Set up OAuth and create a QuoteContext for fetching security quotes."""
-    # 统一走配置中心，内部会处理 OAuth -> apikey 回退。
     quote_config, source = config.build_config_with_fallback(client_id=client_id)
     return QuoteContext(quote_config), source
 
 
-def setup_trade_context(client_id):
-    """Set up OAuth and create a TradeContext for account/trade APIs."""
-    # 与 quote context 一致，使用同一套认证回退策略。
+def setup_trade_context(client_id: str | None):
+    """Create TradeContext using OAuth-first config strategy."""
+
     trade_config, source = config.build_config_with_fallback(client_id=client_id)
     return TradeContext(trade_config), source
 
 
-def fetch_security_quotes(ctx, symbols):
-    """Fetch basic information of securities using the provided context."""
+def fetch_security_quotes(ctx: QuoteContext, symbols):
+    """Fetch quote objects for provided symbols."""
+
     return ctx.quote(symbols)
 
 
-def fetch_stock_positions(ctx):
-    """Fetch current stock positions from the provided trade context."""
+def fetch_stock_positions(ctx: TradeContext):
+    """Fetch current stock positions from trade account."""
+
     return ctx.stock_positions()
 
 
 def inspect_and_call_methods(resp):
-    """Inspect each element in resp, call no-argument methods, and return the gathered results.
+    """Inspect SDK objects into serializable dicts.
 
-    Returns a list of dicts, one per item in resp.
-    Each dict contains:
-      - "type": string representation of the item type
-      - "attributes": mapping of non-callable attribute names to their values (as strings)
-      - "methods": mapping of callable method names to a dict with keys:
-            "status": "called" | "skipped" | "error" | "no_signature"
-            "result": result or exception message (when applicable)
+    For each item:
+    - collect non-callable attributes
+    - best-effort call no-arg methods
     """
+
     results = []
 
     for item in resp:
-        # 将 SDK 对象拍平成可序列化结构，便于日志/消息输出。
         item_entry = {
             "type": str(type(item)),
             "attributes": {},
@@ -68,12 +65,11 @@ def inspect_and_call_methods(resp):
         for name in members:
             try:
                 attr = getattr(item, name)
-            except Exception as e:
-                item_entry["attributes"][name] = f"<attribute access error: {e}>"
+            except Exception as error:
+                item_entry["attributes"][name] = f"<attribute access error: {error}>"
                 continue
 
             if not callable(attr):
-                # Not a method; store value as string
                 try:
                     item_entry["attributes"][name] = str(attr)
                 except Exception:
@@ -82,7 +78,6 @@ def inspect_and_call_methods(resp):
 
             method_entry = {"status": None, "result": None}
 
-            # Try to call only methods with no required parameters
             try:
                 sig = inspect.signature(attr)
                 params = [
@@ -96,8 +91,7 @@ def inspect_and_call_methods(resp):
                     method_entry["result"] = f"requires parameters: {[p.name for p in params]}"
                     item_entry["methods"][name] = method_entry
                     continue
-            except (ValueError, TypeError):
-                # Builtins or C methods may not have signatures
+            except (TypeError, ValueError):
                 method_entry["status"] = "no_signature"
 
             try:
@@ -107,9 +101,9 @@ def inspect_and_call_methods(resp):
                     method_entry["result"] = json.dumps(result, ensure_ascii=False, default=str, indent=2)
                 except Exception:
                     method_entry["result"] = str(result)
-            except Exception as e:
+            except Exception as error:
                 method_entry["status"] = "error"
-                method_entry["result"] = str(e)
+                method_entry["result"] = str(error)
 
             item_entry["methods"][name] = method_entry
 
@@ -118,8 +112,9 @@ def inspect_and_call_methods(resp):
     return results
 
 
-def show_methods(obj):
-    """Print the type of the object and list all of its available methods."""
+def show_methods(obj) -> None:
+    """Debug helper: print callable methods on an object."""
+
     obj_type = type(obj)
     print(f"Object type: {obj_type}")
 
@@ -139,8 +134,8 @@ def show_methods(obj):
         print(f"  - {name}")
 
 
-def format_item_entry(item_entry):
-    """Format the inspection result for a single item into a readable string."""
+def format_item_entry(item_entry) -> str:
+    """Format one inspected entry for readable text output."""
 
     lines = [f"Type: {item_entry.get('type')}\n"]
 
@@ -148,7 +143,6 @@ def format_item_entry(item_entry):
     if attributes:
         lines.append("Attributes:")
         for name, value in sorted(attributes.items()):
-            # Pretty-print JSON-like values for specific quote fields
             if name in ("pre_market_quote", "post_market_quote"):
                 try:
                     parsed = json.loads(value) if isinstance(value, str) else value
@@ -164,7 +158,6 @@ def format_item_entry(item_entry):
     else:
         lines.append("Attributes: (none)")
 
-    # Only output attributes (methods are collected but not printed)
     return "\n".join(lines)
 
 
@@ -172,8 +165,8 @@ DEFAULT_CLIENT_ID = config.LONGBRIDGE_CLIENT_ID
 DEFAULT_SYMBOLS = config.DEFAULT_SYMBOLS
 
 
-def get_inspected_quotes(client_id: str = None, symbols=None):
-    """Return the current inspected quote data (same format as `inspected` in main)."""
+def get_inspected_quotes(client_id: str | None = None, symbols=None):
+    """Fetch quote objects and return inspected structured data."""
 
     if client_id is None:
         client_id = DEFAULT_CLIENT_ID
@@ -184,38 +177,35 @@ def get_inspected_quotes(client_id: str = None, symbols=None):
     try:
         resp = fetch_security_quotes(ctx, symbols)
     except Exception as oauth_error:
-        # 如果当前请求走的是 OAuth 且失败，自动用 apikey 方式重试一次。
+        # Retry once with API-key env config if OAuth path failed.
         if source != "oauth":
             raise
         print(f"OAuth quote request failed, retry with from_apikey_env(): {oauth_error}")
         fallback_ctx = QuoteContext(config.build_apikey_env_config())
         resp = fetch_security_quotes(fallback_ctx, symbols)
-    inspected = inspect_and_call_methods(resp)
-    return inspected
+
+    return inspect_and_call_methods(resp)
 
 
-def get_stock_positions(client_id: str = None):
-    """Return current stock positions via LongBridge Trade API."""
+def get_stock_positions(client_id: str | None = None):
+    """Fetch stock positions, with OAuth fallback retry once."""
 
     if client_id is None:
         client_id = DEFAULT_CLIENT_ID
 
     ctx, source = setup_trade_context(client_id)
     try:
-        resp = fetch_stock_positions(ctx)
-        return resp
+        return fetch_stock_positions(ctx)
     except Exception as oauth_error:
-        # 持仓接口同样做一次 OAuth 失败回退。
         if source != "oauth":
             raise
         print(f"OAuth positions request failed, retry with from_apikey_env(): {oauth_error}")
         fallback_ctx = TradeContext(config.build_apikey_env_config())
-        resp = fetch_stock_positions(fallback_ctx)
-        return resp
+        return fetch_stock_positions(fallback_ctx)
 
 
-def get_inspected_quotes_text(client_id: str = None, symbols=None):
-    """Return inspected quotes as a pretty JSON string."""
+def get_inspected_quotes_text(client_id: str | None = None, symbols=None) -> str:
+    """Return inspected quote result as pretty JSON text."""
 
     inspected = get_inspected_quotes(client_id=client_id, symbols=symbols)
     try:
@@ -224,11 +214,10 @@ def get_inspected_quotes_text(client_id: str = None, symbols=None):
         return str(inspected)
 
 
-def main():
-    """Main function to orchestrate the quote fetching and inspection."""
-    inspected = get_inspected_quotes()
+def main() -> None:
+    """Manual debug entry for quote inspection."""
 
-    # Print formatted inspection results
+    inspected = get_inspected_quotes()
     for idx, item in enumerate(inspected, start=1):
         print("=" * 80)
         print(f"Item {idx}/{len(inspected)}")
@@ -238,4 +227,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
