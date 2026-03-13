@@ -1,3 +1,5 @@
+"""LongBridge 能力层：行情查询、持仓查询、结果格式化。"""
+
 import json
 import inspect
 
@@ -8,12 +10,14 @@ from longbridge.openapi import QuoteContext, TradeContext
 
 def setup_quote_context(client_id):
     """Set up OAuth and create a QuoteContext for fetching security quotes."""
+    # 统一走配置中心，内部会处理 OAuth -> apikey 回退。
     quote_config, source = config.build_config_with_fallback(client_id=client_id)
     return QuoteContext(quote_config), source
 
 
 def setup_trade_context(client_id):
     """Set up OAuth and create a TradeContext for account/trade APIs."""
+    # 与 quote context 一致，使用同一套认证回退策略。
     trade_config, source = config.build_config_with_fallback(client_id=client_id)
     return TradeContext(trade_config), source
 
@@ -42,6 +46,7 @@ def inspect_and_call_methods(resp):
     results = []
 
     for item in resp:
+        # 将 SDK 对象拍平成可序列化结构，便于日志/消息输出。
         item_entry = {
             "type": str(type(item)),
             "attributes": {},
@@ -168,6 +173,7 @@ def get_inspected_quotes(client_id: str = None, symbols=None):
     try:
         resp = fetch_security_quotes(ctx, symbols)
     except Exception as oauth_error:
+        # 如果当前请求走的是 OAuth 且失败，自动用 apikey 方式重试一次。
         if source != "oauth":
             raise
         print(f"OAuth quote request failed, retry with from_apikey_env(): {oauth_error}")
@@ -188,6 +194,7 @@ def get_stock_positions(client_id: str = None):
         resp = fetch_stock_positions(ctx)
         return resp
     except Exception as oauth_error:
+        # 持仓接口同样做一次 OAuth 失败回退。
         if source != "oauth":
             raise
         print(f"OAuth positions request failed, retry with from_apikey_env(): {oauth_error}")

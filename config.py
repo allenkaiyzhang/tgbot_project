@@ -13,6 +13,7 @@ from typing import Callable
 
 from longbridge.openapi import Config, OAuthBuilder
 
+
 def _load_dotenv(path: str = ".env") -> dict[str, str]:
     """Load KEY=VALUE pairs from a .env file."""
 
@@ -46,7 +47,7 @@ def _resolve(key: str, default: str, dotenv: dict[str, str]) -> str:
 
 _DOTENV = _load_dotenv(".env")
 
-# Placeholder defaults.
+# 占位默认值：仅在环境变量和 .env 都缺失时使用。
 _DEFAULTS = {
     "TELEGRAM_BOT_TOKEN": "YOUR_BOT_TOKEN",
     "DEEPSEEK_API_KEY": "YOUR_DEEPSEEK_API_KEY",
@@ -57,12 +58,12 @@ _DEFAULTS = {
     "GMAIL_CC": "",
 }
 
-# Core app settings.
+# 核心配置：优先读取系统环境变量，其次 .env，最后默认值。
 TELEGRAM_BOT_TOKEN = _resolve("TELEGRAM_BOT_TOKEN", _DEFAULTS["TELEGRAM_BOT_TOKEN"], _DOTENV)
 DEEPSEEK_API_KEY = _resolve("DEEPSEEK_API_KEY", _DEFAULTS["DEEPSEEK_API_KEY"], _DOTENV)
 LONGBRIDGE_CLIENT_ID = _resolve("LONGBRIDGE_CLIENT_ID", _DEFAULTS["LONGBRIDGE_CLIENT_ID"], _DOTENV)
 
-# Gmail settings.
+# Gmail 相关配置（用于函数调用通知邮件与手工测试邮件）。
 GMAIL_SENDER = _resolve("GMAIL_SENDER", _DEFAULTS["GMAIL_SENDER"], _DOTENV)
 GMAIL_APP_PASSWORD = _resolve("GMAIL_APP_PASSWORD", _DEFAULTS["GMAIL_APP_PASSWORD"], _DOTENV)
 GMAIL_TO = _resolve("GMAIL_TO", _DEFAULTS["GMAIL_TO"], _DOTENV)
@@ -70,7 +71,7 @@ GMAIL_CC = _resolve("GMAIL_CC", _DEFAULTS["GMAIL_CC"], _DOTENV)
 GMAIL_TO_LIST = _split_csv(GMAIL_TO)
 GMAIL_CC_LIST = _split_csv(GMAIL_CC)
 
-# Other app defaults.
+# 业务默认值。
 DEFAULT_SYMBOLS = ["QQQ.US"]
 
 
@@ -79,6 +80,7 @@ AuthUrlHandler = Callable[[str], None]
 
 
 def _default_auth_url_handler(url: str) -> None:
+    # OAuth 首次授权时打印链接，便于人工打开授权。
     print(f"Open this URL to authorize: {url}")
 
 
@@ -109,6 +111,7 @@ def build_config_with_fallback(
     try:
         return build_oauth_config(client_id=client_id, on_auth_url=on_auth_url), "oauth"
     except Exception as oauth_error:
+        # OAuth 失败时自动回退，尽量保证服务可用。
         print(f"OAuth config failed, fallback to from_apikey_env(): {oauth_error}")
         return build_apikey_env_config(), "apikey_env"
 

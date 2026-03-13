@@ -22,6 +22,7 @@ def send_gmail(
 ) -> None:
     """Send an email via Gmail SMTP (SSL)."""
 
+    # 统一转成 list，方便后续拼接收件人和发信时复用。
     to_list = list(to)
     cc_list = list(cc or [])
     attachment_list = list(attachments or [])
@@ -39,6 +40,7 @@ def send_gmail(
 
     msg.set_content(body)
 
+    # 可选附件：自动根据文件名推断 MIME 类型。
     for file_path in attachment_list:
         path = Path(file_path)
         with path.open("rb") as file:
@@ -60,6 +62,7 @@ def send_gmail(
 def main() -> None:
     """Send a minimal test email using values from config/.env."""
 
+    # 最小自测入口：不传附件，只验证 SMTP 登录与发送链路。
     send_gmail(
         sender=config.GMAIL_SENDER,
         app_password=config.GMAIL_APP_PASSWORD,

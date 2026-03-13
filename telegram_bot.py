@@ -1,4 +1,4 @@
-﻿"""Minimal Telegram bot with DeepSeek + LongBridge features."""
+"""Minimal Telegram bot with DeepSeek + LongBridge features."""
 
 from __future__ import annotations
 
@@ -15,17 +15,18 @@ from gmail_service import send_gmail
 BOT_TOKEN = config.TELEGRAM_BOT_TOKEN
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode=None)
 
-# Chat state: waiting for user's follow-up input.
+# 会话状态：记录某个 chat 是否正在等待二次输入。
 pending_askds: dict[int, bool] = {}
 pending_askstock: dict[int, bool] = {}
 
-# Future-friendly toggle list: add function names here to enable email notification.
+# 可扩展通知开关：后续新增命令时把函数名加到这里即可复用邮件通知。
 EMAIL_NOTIFY_FUNCTIONS = {"askds", "askstock"}
 
 
 def send_long_reply(message, text: str, max_len: int = 4000) -> None:
     """Split and send long text to avoid Telegram single-message limits."""
 
+    # Telegram 单条消息长度有限，超长内容按块回复。
     start = 0
     while start < len(text):
         chunk = text[start : start + max_len]
@@ -103,7 +104,7 @@ def _maybe_send_function_email(
             cc=config.GMAIL_CC_LIST,
         )
     except Exception as email_error:
-        # Keep bot response path healthy even if email fails.
+        # 邮件失败不影响主流程，避免 Bot 因通知问题中断。
         print(f"Email notification failed for {function_name}: {email_error}")
 
 
@@ -116,6 +117,7 @@ def _handle_askds_reply(message) -> bool:
 
     prompt = (message.text or "").strip()
     try:
+        # 成功路径：先拿到 AI 回复，再做回包和通知。
         reply = deepseek_service.get_deepseek_response(prompt)
         is_success = True
     except Exception as e:
@@ -152,6 +154,7 @@ def _handle_askstock_reply(message) -> bool:
         return True
 
     try:
+        # 使用 LongBridge 服务层返回文本化结果。
         reply = longbridge_service.get_inspected_quotes_text(symbols=symbols)
         is_success = True
     except Exception as e:
@@ -174,6 +177,7 @@ def _handle_askstock_reply(message) -> bool:
 def process_message(message) -> bool:
     """Process all user messages. Return True if consumed."""
 
+    # 优先处理处于“等待输入”的命令会话，再走默认回显。
     if _handle_askds_reply(message):
         return True
 
