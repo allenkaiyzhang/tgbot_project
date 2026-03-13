@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import re
+import tempfile
+from datetime import date
+from pathlib import Path
 from typing import Any
 
 import config
@@ -27,6 +31,11 @@ ASKSTOCK_PROMPT = "请输入要查询的股票代码（支持多个，用逗号�
 ASKSTOCK_INVALID = "格式错误，请输入股票代码，例如：QQQ.US 或 0700.HK（可用逗号或空格分隔多个）"
 
 
+ASKSTOCK_ANALYSIS_CONFIRM = "是否需要用ChatGPT进行高级技术分析（是/否）"
+ASKSTOCK_ANALYSIS_INVALID = "请回复 是 或 否。"
+ASKSTOCK_ANALYSIS_CANCELLED = "好的，已取消高级技术分析。"
+
+
 class BotFlow:
     """Stateful bot flow manager."""
 
@@ -47,6 +56,8 @@ class BotFlow:
         self._pending_askds: set[int] = set()
         self._pending_askchatgpt: set[int] = set()
         self._pending_askstock: set[int] = set()
+        self._pending_askstock_analysis: set[int] = set()
+        self._askstock_analysis_context: dict[int, dict[str, Any]] = {}
 
     @staticmethod
     def get_help_text() -> str:
@@ -82,6 +93,8 @@ class BotFlow:
 
     def set_askstock_pending(self, chat_id: int) -> None:
         self._pending_askstock.add(chat_id)
+        self._pending_askstock_analysis.discard(chat_id)
+        self._askstock_analysis_context.pop(chat_id, None)
 
     def get_askstock_pending(self, chat_id: int) -> bool:
         return chat_id in self._pending_askstock
@@ -89,6 +102,15 @@ class BotFlow:
     @staticmethod
     def _parse_symbols(text: str) -> list[str]:
         return [s.strip() for s in re.split(r"[\s,]+", text) if s.strip()]
+
+    @staticmethod
+    def _normalize_yes_no(text: str) -> bool | None:
+        normalized = text.strip().lower()
+        if normalized in {"是", "y", "yes"}:
+            return True
+        if normalized in {"否", "不", "n", "no"}:
+            return False
+        return None
 
     @staticmethod
     def _is_non_empty_response(response: Any) -> bool:
@@ -124,6 +146,33 @@ class BotFlow:
         pending.remove(chat_id)
         return True
 
+    @staticmethod
+    def _create_response_attachment(
+        *,
+        function_name: str,
+        chat_id: int,
+        response: Any,
+    ) -> str:
+        """Persist response content to a temporary text file and return path."""
+
+        if isinstance(response, str):
+            content = response
+        else:
+            try:
+                content = json.dumps(response, ensure_ascii=False, indent=2, default=str)
+            except Exception:
+                content = str(response)
+
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=f"_{function_name}_{chat_id}_response.txt",
+            prefix="tgbot_",
+            encoding="utf-8",
+            delete=False,
+        ) as file:
+            file.write(content)
+            return file.name
+
     def _maybe_send_function_email(
         self,
         *,
@@ -153,6 +202,12 @@ class BotFlow:
             ]
         )
 
+        attachment_path = self._create_response_attachment(
+            function_name=function_name,
+            chat_id=chat_id,
+            response=response,
+        )
+
         try:
             self._gmail_sender(
                 sender=self._config.GMAIL_SENDER,
@@ -161,9 +216,15 @@ class BotFlow:
                 subject=subject,
                 body=body,
                 cc=self._config.GMAIL_CC_LIST,
+                attachments=[attachment_path],
             )
         except Exception as email_error:
             print(f"Email notification failed for {function_name}: {email_error}")
+        finally:
+            try:
+                Path(attachment_path).unlink(missing_ok=True)
+            except Exception as cleanup_error:
+                print(f"Attachment cleanup failed: {cleanup_error}")
 
     def _handle_askds_reply(self, bot, message) -> bool:
         chat_id = message.chat.id
@@ -172,7 +233,7 @@ class BotFlow:
 
         prompt = (message.text or "").strip()
         try:
-            reply = self._llm.get_llm_response(prompt, provider="deepseek")
+            reply = self._llm.get_llm_response(prompt,model="deepseek-chat" ,provider="deepseek")
             is_success = True
         except Exception as error:
             reply = f"askds 调用失败: {error}"
@@ -197,7 +258,7 @@ class BotFlow:
 
         prompt = (message.text or "").strip()
         try:
-            reply = self._llm.get_llm_response(prompt, provider="chatgpt")
+            reply = self._llm.get_llm_response(prompt,model=config.CHATGPT_MODEL,provider="chatgpt")
             is_success = True
         except Exception as error:
             reply = f"askchatgpt 调用失败: {error}"
@@ -211,6 +272,54 @@ class BotFlow:
             chat_id=chat_id,
             user_query=prompt,
             response=reply,
+            is_success=is_success,
+        )
+        return True
+
+    def _handle_askstock_analysis_reply(self, bot, message) -> bool:
+        chat_id = message.chat.id
+        if chat_id not in self._pending_askstock_analysis:
+            return False
+
+        decision = self._normalize_yes_no(message.text or "")
+        if decision is None:
+            bot.reply_to(message, ASKSTOCK_ANALYSIS_INVALID)
+            return True
+
+        self._pending_askstock_analysis.discard(chat_id)
+        context = self._askstock_analysis_context.pop(chat_id, None)
+
+        if decision is False:
+            bot.reply_to(message, ASKSTOCK_ANALYSIS_CANCELLED)
+            return True
+
+        if not context:
+            bot.reply_to(message, "未找到本次 askstock 上下文，请重新使用 /askstock。")
+            return True
+
+        symbols_text = ", ".join(context.get("symbols", []))
+        stock_reply = context.get("stock_reply", "")
+        today = date.today().isoformat()
+        prompt = (
+            f"今天是{today}，请结合以下信息对美/港股的{symbols_text}股票进行技术分析：\n"
+            f"{stock_reply}"
+        )
+
+        try:
+            analysis_reply = self._llm.get_llm_response(prompt, model=config.CHATGPT_MODEL,provider="chatgpt")
+            is_success = True
+        except Exception as error:
+            analysis_reply = f"askstock 高级技术分析失败: {error}"
+            is_success = False
+
+        if analysis_reply:
+            self.send_long_reply(bot, message, analysis_reply)
+
+        self._maybe_send_function_email(
+            function_name="askchatgpt",
+            chat_id=chat_id,
+            user_query=prompt,
+            response=analysis_reply,
             is_success=is_success,
         )
         return True
@@ -243,9 +352,23 @@ class BotFlow:
             response=reply,
             is_success=is_success,
         )
+
+        if is_success and self._is_non_empty_response(reply):
+            self._pending_askstock_analysis.add(chat_id)
+            self._askstock_analysis_context[chat_id] = {
+                "symbols": symbols,
+                "stock_reply": reply,
+            }
+            bot.reply_to(message, ASKSTOCK_ANALYSIS_CONFIRM)
+        else:
+            self._pending_askstock_analysis.discard(chat_id)
+            self._askstock_analysis_context.pop(chat_id, None)
+
         return True
 
     def process_message(self, bot, message) -> bool:
+        if self._handle_askstock_analysis_reply(bot, message):
+            return True
         if self._handle_askds_reply(bot, message):
             return True
         if self._handle_askchatgpt_reply(bot, message):

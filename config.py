@@ -65,8 +65,8 @@ _DEFAULTS = {
     "GMAIL_CC": "",
     # ChatGPT-compatible gateway settings (OpenAI format).
     "CHATGPT_API_KEY": "",
-    "CHATGPT_BASE_URL": "https://burn.hair/v1",
-    "CHATGPT_MODEL": "gpt-5.2",
+    "CHATGPT_BASE_URL": "https://cn-test.burn.hair/v1",
+    "CHATGPT_MODEL": "gpt-5.2-2025-12-11",
     # Whether LongBridge SDK should print quote package table on connect.
     "LONGBRIDGE_PRINT_QUOTE_PACKAGES": "false",
 }
