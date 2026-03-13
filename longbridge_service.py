@@ -44,6 +44,12 @@ def fetch_stock_positions(ctx: TradeContext):
     return ctx.stock_positions()
 
 
+def fetch_static_info(ctx: QuoteContext, symbols):
+    """Fetch static security information for provided symbols."""
+
+    return ctx.static_info(symbols)
+
+
 def inspect_and_call_methods(resp):
     """Inspect SDK objects into serializable dicts.
 
@@ -202,6 +208,30 @@ def get_stock_positions(client_id: str | None = None):
         print(f"OAuth positions request failed, retry with from_apikey_env(): {oauth_error}")
         fallback_ctx = TradeContext(config.build_apikey_env_config())
         return fetch_stock_positions(fallback_ctx)
+
+
+def get_static_info(client_id: str | None = None, symbols=None):
+    """Fetch static info with OAuth fallback retry once.
+
+    If `symbols` is not provided, reuse `DEFAULT_SYMBOLS` from config.
+    """
+
+    if client_id is None:
+        client_id = DEFAULT_CLIENT_ID
+    if symbols is None:
+        symbols = DEFAULT_SYMBOLS
+
+    ctx, source = setup_quote_context(client_id)
+    try:
+        resp = fetch_static_info(ctx, symbols)
+        return resp
+    except Exception as oauth_error:
+        if source != "oauth":
+            raise
+        print(f"OAuth static_info request failed, retry with from_apikey_env(): {oauth_error}")
+        fallback_ctx = QuoteContext(config.build_apikey_env_config())
+        resp = fetch_static_info(fallback_ctx, symbols)
+        return resp
 
 
 def get_inspected_quotes_text(client_id: str | None = None, symbols=None) -> str:
