@@ -74,4 +74,4 @@ GMAIL_CC = os.getenv(
 GMAIL_TO_LIST = _split_csv(GMAIL_TO)
 GMAIL_CC_LIST = _split_csv(GMAIL_CC)
 
-DEFAULT_SYMBOLS = ["VIX.US"]
+DEFAULT_SYMBOLS = ["QQQ.US"]

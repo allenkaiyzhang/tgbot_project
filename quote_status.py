@@ -2,17 +2,15 @@ import json
 import inspect
 
 import config
-from longbridge.openapi import Config, QuoteContext, OAuthBuilder
+from longbridge.openapi import QuoteContext
+from longbridge_config import build_apikey_env_config, build_config_with_fallback
 
 
 
 def setup_quote_context(client_id):
     """Set up OAuth and create a QuoteContext for fetching security quotes."""
-    oauth = OAuthBuilder(client_id).build(
-        lambda url: print(f"Open this URL to authorize: {url}")
-    )
-    config = Config.from_oauth(oauth)
-    return QuoteContext(config)
+    quote_config, source = build_config_with_fallback(client_id=client_id)
+    return QuoteContext(quote_config), source
 
 
 def fetch_security_quotes(ctx, symbols):
@@ -156,8 +154,15 @@ def get_inspected_quotes(client_id: str = None, symbols=None):
     if symbols is None:
         symbols = DEFAULT_SYMBOLS
 
-    ctx = setup_quote_context(client_id)
-    resp = fetch_security_quotes(ctx, symbols)
+    ctx, source = setup_quote_context(client_id)
+    try:
+        resp = fetch_security_quotes(ctx, symbols)
+    except Exception as oauth_error:
+        if source != "oauth":
+            raise
+        print(f"OAuth quote request failed, retry with from_apikey_env(): {oauth_error}")
+        fallback_ctx = QuoteContext(build_apikey_env_config())
+        resp = fetch_security_quotes(fallback_ctx, symbols)
     inspected = inspect_and_call_methods(resp)
     return inspected
 
