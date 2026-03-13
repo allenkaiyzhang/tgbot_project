@@ -126,6 +126,12 @@ def _build_default_service() -> LLMService:
         default_model="deepseek-chat",
     )
     service.register_openai_provider(
+        "deepseek",
+        api_key=config.DEEPSEEK_API_KEY,
+        base_url="https://api.deepseek.com",
+        default_model="deepseek-reasoner",
+    )
+    service.register_openai_provider(
         "chatgpt",
         api_key=config.CHATGPT_API_KEY,
         base_url=config.CHATGPT_BASE_URL,
@@ -155,7 +161,7 @@ def get_llm_response(
     prompt: str,
     *,
     provider: str = "deepseek",
-    model: str | None = None,
+    model: str | None = "chat",
     system_prompt: str = "You are a helpful assistant",
 ) -> str:
     """Backward-compatible function wrapper."""
