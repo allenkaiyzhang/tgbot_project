@@ -45,6 +45,13 @@ def _resolve(key: str, default: str, dotenv: dict[str, str]) -> str:
     return os.getenv(key, dotenv.get(key, default))
 
 
+def _resolve_bool(key: str, default: bool, dotenv: dict[str, str]) -> bool:
+    """Resolve boolean setting from env/.env with common true/false strings."""
+
+    raw = _resolve(key, "true" if default else "false", dotenv).strip().lower()
+    return raw in {"1", "true", "yes", "y", "on"}
+
+
 _DOTENV = _load_dotenv(".env")
 
 # Placeholder defaults.
@@ -60,6 +67,8 @@ _DEFAULTS = {
     "CHATGPT_API_KEY": "",
     "CHATGPT_BASE_URL": "https://burn.hair/v1",
     "CHATGPT_MODEL": "gpt-5.2",
+    # Whether LongBridge SDK should print quote package table on connect.
+    "LONGBRIDGE_PRINT_QUOTE_PACKAGES": "false",
 }
 
 # Core app settings.
@@ -79,6 +88,11 @@ GMAIL_CC_LIST = _split_csv(GMAIL_CC)
 CHATGPT_API_KEY = _resolve("CHATGPT_API_KEY", _DEFAULTS["CHATGPT_API_KEY"], _DOTENV)
 CHATGPT_BASE_URL = _resolve("CHATGPT_BASE_URL", _DEFAULTS["CHATGPT_BASE_URL"], _DOTENV)
 CHATGPT_MODEL = _resolve("CHATGPT_MODEL", _DEFAULTS["CHATGPT_MODEL"], _DOTENV)
+LONGBRIDGE_PRINT_QUOTE_PACKAGES = _resolve_bool(
+    "LONGBRIDGE_PRINT_QUOTE_PACKAGES",
+    False,
+    _DOTENV,
+)
 
 # Other app defaults.
 DEFAULT_SYMBOLS = ["QQQ.US"]
@@ -103,12 +117,19 @@ def build_oauth_config(
     resolved_client_id = client_id or LONGBRIDGE_CLIENT_ID
     handler = on_auth_url or _default_auth_url_handler
     oauth = OAuthBuilder(resolved_client_id).build(handler)
-    return Config.from_oauth(oauth)
+    return Config.from_oauth(
+        oauth,
+        enable_print_quote_packages=LONGBRIDGE_PRINT_QUOTE_PACKAGES,
+    )
 
 
 def build_apikey_env_config() -> Config:
     """Build LongBridge Config from LONGPORT_* or equivalent env vars."""
 
+    # Force SDK quote-package table output behavior from project config.
+    os.environ["LONGBRIDGE_PRINT_QUOTE_PACKAGES"] = (
+        "true" if LONGBRIDGE_PRINT_QUOTE_PACKAGES else "false"
+    )
     return Config.from_apikey_env()
 
 
@@ -138,6 +159,7 @@ __all__ = [
     "CHATGPT_API_KEY",
     "CHATGPT_BASE_URL",
     "CHATGPT_MODEL",
+    "LONGBRIDGE_PRINT_QUOTE_PACKAGES",
     "DEFAULT_SYMBOLS",
     "build_oauth_config",
     "build_apikey_env_config",
