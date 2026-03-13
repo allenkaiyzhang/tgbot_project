@@ -1,11 +1,11 @@
-from longbridge.openapi import TradeContext, Config, OrderType, OrderSide, TimeInForceType, OAuthBuilder
+from longbridge.openapi import Config, TradeContext
 
-client_id="ca9f761d-bb7f-44a4-a4f0-b6c952eb3090"
-oauth = OAuthBuilder(client_id).build(
-    lambda url: print(f"Open this URL to authorize: {url}")
-)
-# Create a context for trade APIs
-config = Config.from_oauth(oauth)
-ctx = TradeContext(config)
-resp = ctx.stock_positions()
-print(resp)
+config = Config.from_apikey_env()
+def get_stock_positions(config):
+    ctx = TradeContext(config)
+    resp = ctx.stock_positions()
+    return resp
+
+
+if __name__ == "__main__":
+    print(get_stock_positions())
