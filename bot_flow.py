@@ -9,10 +9,9 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+import ai_notification_service
 import config
-import llm_service
 import longbridge_service
-from gmail_service import send_gmail
 
 HELP_TEXT = (
     "可用命令与用法：\n"
@@ -43,9 +42,9 @@ class BotFlow:
         self,
         *,
         config_module=config,
-        llm_module=llm_service,
+        llm_module=ai_notification_service,
         longbridge_module=longbridge_service,
-        gmail_sender=send_gmail,
+        gmail_sender=ai_notification_service.send_gmail,
         email_notify_functions: set[str] | None = None,
     ) -> None:
         self._config = config_module
@@ -292,24 +291,24 @@ class BotFlow:
         if decision is False:
             bot.reply_to(message, ASKSTOCK_ANALYSIS_CANCELLED)
             return True
-
         if not context:
-            bot.reply_to(message, "未找到本次 askstock 上下文，请重新使用 /askstock。")
+            bot.reply_to(message, "No askstock context found. Please run /askstock again.")
             return True
 
         symbols_text = ", ".join(context.get("symbols", []))
         stock_reply = context.get("stock_reply", "")
         today = date.today().isoformat()
         prompt = (
-            f"今天是{today}，请结合以下信息对美/港股的{symbols_text}股票进行技术分析：\n"
-            f"{stock_reply}"
+            f"Today is {today}. Please perform technical analysis for US/HK stocks "
+            f"{symbols_text} using the following realtime quote, candlestick, and "
+            f"offset-candlestick data:\n{stock_reply}"
         )
 
         try:
             analysis_reply = self._llm.get_llm_response(prompt, model=config.CHATGPT_MODEL,provider="chatgpt")
             is_success = True
         except Exception as error:
-            analysis_reply = f"askstock 高级技术分析失败: {error}"
+            analysis_reply = f"askstock advanced technical analysis failed: {error}"
             is_success = False
 
         if analysis_reply:

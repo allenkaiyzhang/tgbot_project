@@ -1,78 +1,100 @@
-# Minimal Telegram Bot Suite
+# Telegram Bot Suite
 
-这是一个最小可用的 Telegram Bot 项目。
+Minimal Telegram bot project with:
+- `askds` (DeepSeek)
+- `askchatgpt` (ChatGPT/OpenAI-compatible endpoint)
+- `askstock` (LongBridge quote query)
+- optional Gmail notification per command (with response attachment)
 
-## 文件与依赖关系
+## Architecture
 
-- `main.py`
-  - 项目主入口，默认启动 `telegram_bot.main`
-- `telegram_bot.py`（入口层）
-  - 负责 Telegram 命令注册和路由
-  - 将业务处理委托给 `bot_flow.py`
-- `bot_flow.py`（会话与业务流层）
-  - 管理 `askds / askchatgpt / askstock` 的等待状态
-  - 调用 `llm_service.py`、`longbridge_service.py`、`gmail_service.py`
-- `llm_service.py`（LLM 服务层）
-  - 提供统一函数 `get_llm_response(...)`
-  - 支持 `deepseek` 与 `chatgpt/openai` provider
-- `longbridge_service.py`（LongBridge 服务层）
-  - 提供行情与持仓查询能力
-- `gmail_service.py`（邮件服务层）
-  - 提供 Gmail SMTP 发信能力
-- `config.py`（配置中心）
-  - 统一读取环境变量与 `.env`
-  - 提供 LongBridge OAuth + fallback 配置构建
-- `telegram_echo_demo.py`
-  - 简易 Echo Bot 示例
+- [main.py](/d:/tgbot/main.py)
+  - startup entrypoint
+  - calls `telegram_bot.main()`
+- [telegram_bot.py](/d:/tgbot/telegram_bot.py)
+  - Telegram command registration
+  - delegates business flow to `bot_flow`
+- [bot_flow.py](/d:/tgbot/bot_flow.py)
+  - stateful `BotFlow` class
+  - manages pending chat states
+  - command execution and email notification
+  - `askstock` includes second-step confirmation:
+    - asks: `Need advanced technical analysis by ChatGPT? (yes/no)`
+    - if reply is `yes`, calls ChatGPT for technical analysis
+- [ai_notification_service.py](/d:/tgbot/ai_notification_service.py)
+  - merged AI + email service module
+  - LLM API: `get_llm_response(...)`
+  - Email API: `send_gmail(...)`
+- [longbridge_service.py](/d:/tgbot/longbridge_service.py)
+  - `LB` class for LongBridge quote/trade/news capabilities
+  - wrapper API used by bot: `get_inspected_quotes_text(...)`
+- [config.py](/d:/tgbot/config.py)
+  - unified env + `.env` loader
+  - LongBridge OAuth + API-key fallback config
 
-## 主要函数关系
+## Command Flow
 
-- Telegram 消息处理
-  - `telegram_bot.handle_echo()`
-  - -> `bot_flow.process_message()`
-  - -> `_handle_askds_reply()` -> `llm_service.get_llm_response(provider="deepseek")`
-  - -> `_handle_askchatgpt_reply()` -> `llm_service.get_llm_response(provider="chatgpt")`
-  - -> `_handle_askstock_reply()` -> `longbridge_service.get_inspected_quotes_text()`
-- 邮件通知
-  - `bot_flow._maybe_send_function_email()`
-  - -> `gmail_service.send_gmail()`
-- LongBridge 鉴权回退
-  - `longbridge_service.setup_*_context()`
-  - -> `config.build_config_with_fallback()`
-  - -> OAuth 失败时回退 `config.build_apikey_env_config()`
+- `/askds`
+  - waits for next message
+  - calls `ai_notification_service.get_llm_response(provider="deepseek")`
+- `/askchatgpt`
+  - waits for next message
+  - calls `ai_notification_service.get_llm_response(provider="chatgpt")`
+- `/askstock`
+  - waits for stock symbols
+  - calls `longbridge_service.get_inspected_quotes_text(...)`
+  - returns market snapshot data including:
+    - realtime quote
+    - candlesticks
+    - history candlesticks by offset
+  - asks yes/no for advanced analysis
+  - if yes, calls ChatGPT with date + stock response context
 
-## 运行方式
+## Email Notification
 
-1. 安装依赖
+- Configured in `bot_flow` by `email_notify_functions`
+- Sends only when response is non-empty
+- Each email includes:
+  - summary body (query/success/non-empty)
+  - response attachment (`.txt`) generated from result content
+
+## Setup
+
+1. Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-2. 配置 `.env`
+2. Configure `.env`:
 
 ```env
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-DEEPSEEK_API_KEY=your_deepseek_api_key
-LONGBRIDGE_CLIENT_ID=your_longbridge_client_id
+TELEGRAM_BOT_TOKEN=...
 
-GMAIL_SENDER=your_account@gmail.com
-GMAIL_APP_PASSWORD=your_16_digit_app_password
-GMAIL_TO=to1@example.com,to2@example.com
-GMAIL_CC=
-
-CHATGPT_API_KEY=your_chatgpt_or_gateway_key
+DEEPSEEK_API_KEY=...
+CHATGPT_API_KEY=...
 CHATGPT_BASE_URL=https://burn.hair/v1
 CHATGPT_MODEL=gpt-5.2
+
+LONGBRIDGE_CLIENT_ID=...
+LONGBRIDGE_APP_KEY=...
+LONGBRIDGE_APP_SECRET=...
+LONGBRIDGE_ACCESS_TOKEN=...
+LONGBRIDGE_PRINT_QUOTE_PACKAGES=false
+
+GMAIL_SENDER=...
+GMAIL_APP_PASSWORD=...
+GMAIL_TO=...
+GMAIL_CC=
 ```
 
-3. 启动项目
+3. Run:
 
 ```bash
 python main.py
 ```
 
-## 扩展说明
+## Notes
 
-- 要给更多命令加邮件通知，在 `bot_flow.py` 的 `EMAIL_NOTIFY_FUNCTIONS` 中增加函数名。
-- 要切换 LLM 提供方，使用 `llm_service.get_llm_response(provider=...)`。
+- Do not commit real API keys/tokens.
+- `askstock` advanced analysis may increase ChatGPT latency and cost when quote payloads are large.

@@ -10,7 +10,6 @@ Public APIs used by the bot:
 
 from __future__ import annotations
 
-import inspect
 import json
 import os
 from datetime import date, datetime
@@ -693,72 +692,122 @@ DEFAULT_CLIENT_ID = config.LONGBRIDGE_CLIENT_ID
 DEFAULT_SYMBOLS = config.DEFAULT_SYMBOLS
 
 
+def _serialize_sdk_value(value: Any, *, depth: int = 0, max_depth: int = 4) -> Any:
+    """Convert SDK objects into JSON-serializable structures."""
+
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+
+    if isinstance(value, (Decimal, date, datetime)):
+        return str(value)
+
+    if isinstance(value, dict):
+        return {str(k): _serialize_sdk_value(v, depth=depth + 1, max_depth=max_depth) for k, v in value.items()}
+
+    if isinstance(value, (list, tuple, set)):
+        return [_serialize_sdk_value(v, depth=depth + 1, max_depth=max_depth) for v in value]
+
+    if depth >= max_depth:
+        return str(value)
+
+    attrs: dict[str, Any] = {}
+    for name in dir(value):
+        if name.startswith("_"):
+            continue
+        try:
+            attr = getattr(value, name)
+        except Exception:
+            continue
+        if callable(attr):
+            continue
+        attrs[name] = _serialize_sdk_value(attr, depth=depth + 1, max_depth=max_depth)
+
+    if attrs:
+        return attrs
+    return str(value)
+
+
+def _build_market_snapshot_payload(
+    client: LB,
+    symbols: list[str],
+    *,
+    period: str = "Day",
+    adjust_type: str = "NoAdjust",
+    candlestick_count: int = 20,
+    offset_count: int = 20,
+    forward: bool = False,
+) -> dict[str, Any]:
+    """Build askstock payload with realtime quote + kline + offset kline."""
+
+    snapshot_time = datetime.now()
+    payload: dict[str, Any] = {
+        "generated_at": snapshot_time.isoformat(timespec="seconds"),
+        "period": period,
+        "adjust_type": adjust_type,
+        "candlestick_count": candlestick_count,
+        "offset_count": offset_count,
+        "forward": forward,
+        "symbols": symbols,
+        "market_data": {},
+    }
+
+    for symbol in symbols:
+        symbol_payload: dict[str, Any] = {}
+
+        try:
+            symbol_payload["realtime_quote"] = _serialize_sdk_value(client.realtime_quote([symbol]))
+        except Exception as error:
+            symbol_payload["realtime_quote_error"] = str(error)
+
+        try:
+            symbol_payload["candlesticks"] = _serialize_sdk_value(
+                client.candlesticks(
+                    symbol=symbol,
+                    period=period,
+                    count=candlestick_count,
+                    adjust_type=adjust_type,
+                )
+            )
+        except Exception as error:
+            symbol_payload["candlesticks_error"] = str(error)
+
+        try:
+            symbol_payload["offset_candlesticks"] = _serialize_sdk_value(
+                client.history_candlesticks_by_offset(
+                    symbol=symbol,
+                    period=period,
+                    adjust_type=adjust_type,
+                    forward=forward,
+                    count=offset_count,
+                    time=snapshot_time,
+                )
+            )
+        except Exception as error:
+            symbol_payload["offset_candlesticks_error"] = str(error)
+
+        payload["market_data"][symbol] = symbol_payload
+
+    return payload
+
+
 def get_inspected_quotes_text(client_id: str | None = None, symbols=None) -> str:
-    """Fetch quote objects, inspect them, and return pretty JSON text."""
+    """Return askstock market snapshot as pretty JSON text.
+
+    Includes per-symbol:
+    - realtime quote
+    - candlesticks
+    - history candlesticks by offset
+    """
 
     resolved_client_id = client_id or DEFAULT_CLIENT_ID
     resolved_symbols = list(DEFAULT_SYMBOLS if symbols is None else symbols)
-    resp = LB(client_id=resolved_client_id).quote(resolved_symbols)
-
-    inspected: list[dict[str, Any]] = []
-    for item in resp:
-        item_entry: dict[str, Any] = {
-            "type": str(type(item)),
-            "attributes": {},
-            "methods": {},
-        }
-
-        members = [m for m in dir(item) if not (m.startswith("__") and m.endswith("__"))]
-        for name in members:
-            try:
-                attr = getattr(item, name)
-            except Exception as error:
-                item_entry["attributes"][name] = f"<attribute access error: {error}>"
-                continue
-
-            if not callable(attr):
-                try:
-                    item_entry["attributes"][name] = str(attr)
-                except Exception:
-                    item_entry["attributes"][name] = "<unprintable>"
-                continue
-
-            method_entry: dict[str, Any] = {"status": None, "result": None}
-            try:
-                sig = inspect.signature(attr)
-                params = [
-                    p
-                    for p in sig.parameters.values()
-                    if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
-                    and p.default is p.empty
-                ]
-                if params:
-                    method_entry["status"] = "skipped"
-                    method_entry["result"] = f"requires parameters: {[p.name for p in params]}"
-                    item_entry["methods"][name] = method_entry
-                    continue
-            except (TypeError, ValueError):
-                method_entry["status"] = "no_signature"
-
-            try:
-                result = attr()
-                method_entry["status"] = "called"
-                try:
-                    method_entry["result"] = json.dumps(result, ensure_ascii=False, default=str, indent=2)
-                except Exception:
-                    method_entry["result"] = str(result)
-            except Exception as error:
-                method_entry["status"] = "error"
-                method_entry["result"] = str(error)
-
-            item_entry["methods"][name] = method_entry
-
-        inspected.append(item_entry)
+    client = LB(client_id=resolved_client_id)
+    snapshot = _build_market_snapshot_payload(client, resolved_symbols)
 
     try:
-        return json.dumps(inspected, ensure_ascii=False, indent=2)
+        return json.dumps(snapshot, ensure_ascii=False, indent=2)
     except Exception:
-        return str(inspected)
+        return str(snapshot)
 
 
 def main() -> None:
