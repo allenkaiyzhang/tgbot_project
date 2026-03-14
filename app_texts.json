@@ -1,0 +1,92 @@
+{
+  "config": {
+    "symbols": [
+      "QQQ.US"
+    ],
+    "oauth_open_url_template": "Open this URL to authorize: {url}",
+    "oauth_fallback_log": "OAuth config failed, fallback to from_apikey_env(): {error}"
+  },
+  "llm": {
+    "provider": "deepseek",
+    "system_prompt": "你是一个有帮助的助手",
+    "deepseek_model": "deepseek-chat",
+    "deepseek_base_url": "https://api.deepseek.com",
+    "chatgpt_aliases": [
+      "chatgpt",
+      "openai"
+    ],
+    "unsupported_provider_error": "Unsupported provider: {provider}",
+    "test_llm_prompt": "请用一句简短的话打个招呼。",
+    "test_llm_failed": "LLM test failed: {error}"
+  },
+  "email": {
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 465,
+    "to_empty_error": "Parameter 'to' cannot be empty.",
+    "gmail_incomplete_log": "Email notification skipped: Gmail settings are incomplete.",
+    "summary_generation_failed": "摘要生成失败",
+    "summary_generation_failed_log": "Email summary generation failed for {function_name}: {error}",
+    "email_notification_failed_log": "Email notification failed for {function_name}: {error}",
+    "attachment_cleanup_failed_log": "Attachment cleanup failed: {error}",
+    "test_subject": "ai_notification_service 测试邮件",
+    "test_body": "这是一封来自 ai_notification_service.py 的测试邮件。",
+    "test_sent": "测试邮件发送成功。",
+    "test_failed": "Email test failed: {error}"
+  },
+  "bot": {
+    "help_text": "可用命令与用法：\n1) /askds\n发送该命令后，再发送你的问题，Bot 会用 DeepSeek 返回结果。\n\n2) /askchatgpt\n发送该命令后，再发送你的问题，Bot 会用 ChatGPT 返回结果。\n\n3) /askstock\n发送该命令后，再发送股票代码，支持多个，空格或逗号分隔。\n示例：QQQ.US 0700.HK",
+    "askds_prompt": "请输入你要让 DeepSeek 回答的 prompt（发送后返回结果）：",
+    "askchatgpt_prompt": "请输入你要让 ChatGPT 回答的 prompt（发送后返回结果）：",
+    "askstock_prompt": "请输入要查询的股票代码（支持多个，用逗号或空格分隔，例如：QQQ.US 0700.HK）：",
+    "askstock_invalid": "格式错误，请输入股票代码，例如：QQQ.US 或 0700.HK（可用逗号或空格分隔多个）。",
+    "askstock_analysis_confirm": "是否需要用 ChatGPT 进行高级技术分析（是/否）？",
+    "askstock_analysis_invalid": "请回答：是 或 否。",
+    "askstock_analysis_cancelled": "好的，已取消高级技术分析。",
+    "askstock_context_missing": "未找到本次 askstock 的上下文，请重新执行 /askstock。",
+    "askstock_analysis_prompt_template": "今天是 {today}。请结合以下实时行情、K线和时间偏移K线数据，对美/港股 {symbols_text} 进行技术分析：\n{stock_reply}",
+    "yes_words": [
+      "是",
+      "y",
+      "yes"
+    ],
+    "no_words": [
+      "否",
+      "不",
+      "n",
+      "no"
+    ],
+    "askds_error_template": "askds 调用失败：{error}",
+    "askchatgpt_error_template": "askchatgpt 调用失败：{error}",
+    "askstock_error_template": "askstock 查询失败：{error}",
+    "askstock_analysis_error_template": "askstock 高级技术分析失败：{error}",
+    "email_notify_functions": [
+      "askds",
+      "askchatgpt",
+      "askstock"
+    ],
+    "email_subject_template": "{chat_id} 用户调用了一次 {function_name} 函数",
+    "email_body_template": "摘要：{summary}\nresponse是否为空：{response_is_empty}\n本次查询是否成功：{is_success}",
+    "email_summary_prompt_template": "请你总结一次机器人查询的请求与响应。\n\n硬性要求：\n1) 只输出最终摘要，不要任何解释、前后缀、标题、标点说明。\n2) 必须使用中文。\n3) 总字数必须小于等于50字。\n4) 必须同时覆盖“用户请求核心内容”和“响应结果/结论”。\n5) 若响应为空或失败，需在摘要中明确体现“响应为空”或“调用失败”。\n\n用户请求：\n{user_query}\n\n系统响应：\n{response_text}\n"
+  },
+  "telegram": {
+    "unmatched_reply": "1",
+    "startup_message": "Bot started, polling ... (CTRL+C to stop)"
+  },
+  "longbridge": {
+    "http_host": "https://openapi.longportapp.com",
+    "news_accept": "application/json",
+    "news_user_agent": "LongbridgeOpenAPIBasic/1.0",
+    "snapshot_period": "Day",
+    "snapshot_adjust_type": "NoAdjust",
+    "snapshot_candlestick_count": 20,
+    "snapshot_offset_count": 20,
+    "snapshot_forward": false
+  },
+  "main": {
+    "ai_notification_test_desc": "AI + 邮件服务测试入口。",
+    "ai_notification_mode_help": "测试模式",
+    "ai_notification_provider_help": "LLM 提供方（仅 llm 模式）",
+    "ai_notification_prompt_help": "llm 模式下的 prompt 文本",
+    "ai_notification_model_help": "llm 模式下可选模型覆盖"
+  }
+}

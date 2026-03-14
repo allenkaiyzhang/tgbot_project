@@ -135,7 +135,8 @@ class LB:
         """
         self.client_id = client_id
         self.timeout = timeout
-        self.http_host = (http_host or os.getenv("LONGBRIDGE_HTTP_HOST") or "https://openapi.longportapp.com").rstrip("/")
+        text_http_host = config.get_text("longbridge.http_host")
+        self.http_host = (http_host or os.getenv("LONGBRIDGE_HTTP_HOST") or text_http_host).rstrip("/")
         self.access_token = (
             access_token
             or os.getenv("LONGBRIDGE_ACCESS_TOKEN")
@@ -664,8 +665,8 @@ class LB:
     # =========================
     def _news_headers(self) -> dict:
         headers = {
-            "Accept": "application/json",
-            "User-Agent": "LongbridgeOpenAPIBasic/1.0",
+            "Accept": config.get_text("longbridge.news_accept"),
+            "User-Agent": config.get_text("longbridge.news_user_agent"),
         }
         if self.access_token:
             headers["Authorization"] = f"Bearer {self.access_token}"
@@ -688,8 +689,8 @@ class LB:
             return json.loads(response.read().decode("utf-8"))
 
 
-DEFAULT_CLIENT_ID = config.LONGBRIDGE_CLIENT_ID
-DEFAULT_SYMBOLS = config.DEFAULT_SYMBOLS
+CLIENT_ID = config.LONGBRIDGE_CLIENT_ID
+SYMBOLS = config.SYMBOLS
 
 
 def _serialize_sdk_value(value: Any, *, depth: int = 0, max_depth: int = 4) -> Any:
@@ -731,22 +732,38 @@ def _build_market_snapshot_payload(
     client: LB,
     symbols: list[str],
     *,
-    period: str = "Day",
-    adjust_type: str = "NoAdjust",
-    candlestick_count: int = 20,
-    offset_count: int = 20,
-    forward: bool = False,
+    period: str | None = None,
+    adjust_type: str | None = None,
+    candlestick_count: int | None = None,
+    offset_count: int | None = None,
+    forward: bool | None = None,
 ) -> dict[str, Any]:
     """Build askstock payload with realtime quote + kline + offset kline."""
+
+    resolved_period = period or str(config.get_text("longbridge.snapshot_period"))
+    resolved_adjust_type = adjust_type or str(config.get_text("longbridge.snapshot_adjust_type"))
+    resolved_candlestick_count = int(
+        candlestick_count
+        if candlestick_count is not None
+        else config.get_text("longbridge.snapshot_candlestick_count")
+    )
+    resolved_offset_count = int(
+        offset_count
+        if offset_count is not None
+        else config.get_text("longbridge.snapshot_offset_count")
+    )
+    resolved_forward = bool(
+        forward if forward is not None else config.get_text("longbridge.snapshot_forward")
+    )
 
     snapshot_time = datetime.now()
     payload: dict[str, Any] = {
         "generated_at": snapshot_time.isoformat(timespec="seconds"),
-        "period": period,
-        "adjust_type": adjust_type,
-        "candlestick_count": candlestick_count,
-        "offset_count": offset_count,
-        "forward": forward,
+        "period": resolved_period,
+        "adjust_type": resolved_adjust_type,
+        "candlestick_count": resolved_candlestick_count,
+        "offset_count": resolved_offset_count,
+        "forward": resolved_forward,
         "symbols": symbols,
         "market_data": {},
     }
@@ -763,9 +780,9 @@ def _build_market_snapshot_payload(
             symbol_payload["candlesticks"] = _serialize_sdk_value(
                 client.candlesticks(
                     symbol=symbol,
-                    period=period,
-                    count=candlestick_count,
-                    adjust_type=adjust_type,
+                    period=resolved_period,
+                    count=resolved_candlestick_count,
+                    adjust_type=resolved_adjust_type,
                 )
             )
         except Exception as error:
@@ -775,10 +792,10 @@ def _build_market_snapshot_payload(
             symbol_payload["offset_candlesticks"] = _serialize_sdk_value(
                 client.history_candlesticks_by_offset(
                     symbol=symbol,
-                    period=period,
-                    adjust_type=adjust_type,
-                    forward=forward,
-                    count=offset_count,
+                    period=resolved_period,
+                    adjust_type=resolved_adjust_type,
+                    forward=resolved_forward,
+                    count=resolved_offset_count,
                     time=snapshot_time,
                 )
             )
@@ -799,8 +816,8 @@ def get_inspected_quotes_text(client_id: str | None = None, symbols=None) -> str
     - history candlesticks by offset
     """
 
-    resolved_client_id = client_id or DEFAULT_CLIENT_ID
-    resolved_symbols = list(DEFAULT_SYMBOLS if symbols is None else symbols)
+    resolved_client_id = client_id or CLIENT_ID
+    resolved_symbols = list(SYMBOLS if symbols is None else symbols)
     client = LB(client_id=resolved_client_id)
     snapshot = _build_market_snapshot_payload(client, resolved_symbols)
 

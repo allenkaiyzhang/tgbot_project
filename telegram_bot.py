@@ -14,6 +14,8 @@ import bot_flow
 import config
 
 BOT_TOKEN = config.TELEGRAM_BOT_TOKEN
+FALLBACK_TEXT = config.get_text("telegram.unmatched_reply")
+STARTUP_MESSAGE = config.get_text("telegram.startup_message")
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode=None)
 
 
@@ -54,13 +56,13 @@ def handle_echo(message):
 
     if bot_flow.process_message(bot, message):
         return
-    bot.reply_to(message, "1")
+    bot.reply_to(message, FALLBACK_TEXT)
 
 
 def main() -> None:
     """Run bot polling loop."""
 
-    print("Bot 已启动，开始 polling ... (CTRL+C 可停止)")
+    print(STARTUP_MESSAGE)
     bot.infinity_polling(timeout=60)
 
 

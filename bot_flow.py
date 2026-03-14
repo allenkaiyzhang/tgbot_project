@@ -13,26 +13,20 @@ import ai_notification_service
 import config
 import longbridge_service
 
-HELP_TEXT = (
-    "可用命令与用法：\n"
-    "1) /askds\n"
-    "发送该命令后，再发送你的问题，Bot 会用 DeepSeek 返回结果。\n\n"
-    "2) /askchatgpt\n"
-    "发送该命令后，再发送你的问题，Bot 会用 ChatGPT 返回结果。\n\n"
-    "3) /askstock\n"
-    "发送该命令后，再发送股票代码，支持多个，空格或逗号分隔。\n"
-    "示例：QQQ.US 0700.HK"
-)
+HELP_TEXT = config.get_text("bot.help_text")
+ASKDS_PROMPT = config.get_text("bot.askds_prompt")
+ASKCHATGPT_PROMPT = config.get_text("bot.askchatgpt_prompt")
+ASKSTOCK_PROMPT = config.get_text("bot.askstock_prompt")
+ASKSTOCK_INVALID = config.get_text("bot.askstock_invalid")
+ASKSTOCK_ANALYSIS_CONFIRM = config.get_text("bot.askstock_analysis_confirm")
+ASKSTOCK_ANALYSIS_INVALID = config.get_text("bot.askstock_analysis_invalid")
+ASKSTOCK_ANALYSIS_CANCELLED = config.get_text("bot.askstock_analysis_cancelled")
+ASKSTOCK_CONTEXT_MISSING = config.get_text("bot.askstock_context_missing")
 
-ASKDS_PROMPT = "请输入你要让 DeepSeek 回答的 prompt（发送后返回结果）："
-ASKCHATGPT_PROMPT = "请输入你要让 ChatGPT 回答的 prompt（发送后返回结果）："
-ASKSTOCK_PROMPT = "请输入要查询的股票代码（支持多个，用逗号或空格分隔，例如：QQQ.US 0700.HK）："
-ASKSTOCK_INVALID = "格式错误，请输入股票代码，例如：QQQ.US 或 0700.HK（可用逗号或空格分隔多个）"
-
-
-ASKSTOCK_ANALYSIS_CONFIRM = "是否需要用ChatGPT进行高级技术分析（是/否）"
-ASKSTOCK_ANALYSIS_INVALID = "请回复 是 或 否。"
-ASKSTOCK_ANALYSIS_CANCELLED = "好的，已取消高级技术分析。"
+YES_WORDS = {str(v).strip().lower() for v in config.get_text("bot.yes_words")}
+NO_WORDS = {str(v).strip().lower() for v in config.get_text("bot.no_words")}
+DEEPSEEK_MODEL = config.get_text("llm.deepseek_model")
+NOTIFY_FUNCTIONS = set(config.get_text("bot.email_notify_functions"))
 
 
 class BotFlow:
@@ -51,7 +45,9 @@ class BotFlow:
         self._llm = llm_module
         self._longbridge = longbridge_module
         self._gmail_sender = gmail_sender
-        self._email_notify_functions = email_notify_functions or {"askds", "askchatgpt", "askstock"}
+        self._email_notify_functions = (
+            NOTIFY_FUNCTIONS if email_notify_functions is None else email_notify_functions
+        )
         self._pending_askds: set[int] = set()
         self._pending_askchatgpt: set[int] = set()
         self._pending_askstock: set[int] = set()
@@ -105,9 +101,9 @@ class BotFlow:
     @staticmethod
     def _normalize_yes_no(text: str) -> bool | None:
         normalized = text.strip().lower()
-        if normalized in {"是", "y", "yes"}:
+        if normalized in YES_WORDS:
             return True
-        if normalized in {"否", "不", "n", "no"}:
+        if normalized in NO_WORDS:
             return False
         return None
 
@@ -124,9 +120,9 @@ class BotFlow:
     def _is_gmail_configured(self) -> bool:
         if not self._config.GMAIL_TO_LIST:
             return False
-        if not self._config.GMAIL_SENDER or self._config.GMAIL_SENDER == "YOUR_GMAIL_ADDRESS":
+        if not self._config.GMAIL_SENDER:
             return False
-        if not self._config.GMAIL_APP_PASSWORD or self._config.GMAIL_APP_PASSWORD == "YOUR_GMAIL_APP_PASSWORD":
+        if not self._config.GMAIL_APP_PASSWORD:
             return False
         return True
 
@@ -146,31 +142,38 @@ class BotFlow:
         return True
 
     @staticmethod
-    def _create_response_attachment(
+    def _serialize_text(content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        try:
+            return json.dumps(content, ensure_ascii=False, indent=2, default=str)
+        except Exception:
+            return str(content)
+
+    def _create_text_attachment(
+        self,
         *,
         function_name: str,
         chat_id: int,
-        response: Any,
+        kind: str,
+        content: Any,
     ) -> str:
-        """Persist response content to a temporary text file and return path."""
-
-        if isinstance(response, str):
-            content = response
-        else:
-            try:
-                content = json.dumps(response, ensure_ascii=False, indent=2, default=str)
-            except Exception:
-                content = str(response)
+        """Persist text content to a temporary file and return path."""
 
         with tempfile.NamedTemporaryFile(
             mode="w",
-            suffix=f"_{function_name}_{chat_id}_response.txt",
+            suffix=f"_{function_name}_{chat_id}_{kind}.txt",
             prefix="tgbot_",
             encoding="utf-8",
             delete=False,
         ) as file:
-            file.write(content)
+            file.write(self._serialize_text(content))
             return file.name
+
+    @staticmethod
+    def _build_email_summary_prompt(user_query: str, response_text: str) -> str:
+        template = config.get_text("bot.email_summary_prompt_template")
+        return template.format(user_query=user_query, response_text=response_text)
 
     def _maybe_send_function_email(
         self,
@@ -189,23 +192,44 @@ class BotFlow:
             return
 
         if not self._is_gmail_configured():
-            print("Email notification skipped: Gmail settings are incomplete.")
+            print(config.get_text("email.gmail_incomplete_log"))
             return
 
-        subject = f"{chat_id}用户调用了一次{function_name}函数"
-        body = "\n".join(
-            [
-                f"用户查询内容为：{user_query}",
-                f"response是否为空：{not response_non_empty}",
-                f"本次查询是否成功：{is_success}",
-            ]
+        subject_template = config.get_text("bot.email_subject_template")
+        subject = subject_template.format(chat_id=chat_id, function_name=function_name)
+
+        response_text = self._serialize_text(response)
+        summary_text = config.get_text("email.summary_generation_failed")
+        try:
+            summary_text = self._llm.get_llm_response(
+                self._build_email_summary_prompt(user_query=user_query, response_text=response_text),
+                model=DEEPSEEK_MODEL,
+                provider="deepseek",
+            ).strip()
+        except Exception as summary_error:
+            template = config.get_text("email.summary_generation_failed_log")
+            print(template.format(function_name=function_name, error=summary_error))
+
+        body_template = config.get_text("bot.email_body_template")
+        body = body_template.format(
+            summary=summary_text,
+            response_is_empty=(not response_non_empty),
+            is_success=is_success,
         )
 
-        attachment_path = self._create_response_attachment(
+        request_attachment_path = self._create_text_attachment(
             function_name=function_name,
             chat_id=chat_id,
-            response=response,
+            kind="request",
+            content=user_query,
         )
+        response_attachment_path = self._create_text_attachment(
+            function_name=function_name,
+            chat_id=chat_id,
+            kind="response",
+            content=response,
+        )
+        attachment_paths = [request_attachment_path, response_attachment_path]
 
         try:
             self._gmail_sender(
@@ -215,15 +239,18 @@ class BotFlow:
                 subject=subject,
                 body=body,
                 cc=self._config.GMAIL_CC_LIST,
-                attachments=[attachment_path],
+                attachments=attachment_paths,
             )
         except Exception as email_error:
-            print(f"Email notification failed for {function_name}: {email_error}")
+            template = config.get_text("email.email_notification_failed_log")
+            print(template.format(function_name=function_name, error=email_error))
         finally:
-            try:
-                Path(attachment_path).unlink(missing_ok=True)
-            except Exception as cleanup_error:
-                print(f"Attachment cleanup failed: {cleanup_error}")
+            for attachment_path in attachment_paths:
+                try:
+                    Path(attachment_path).unlink(missing_ok=True)
+                except Exception as cleanup_error:
+                    template = config.get_text("email.attachment_cleanup_failed_log")
+                    print(template.format(error=cleanup_error))
 
     def _handle_askds_reply(self, bot, message) -> bool:
         chat_id = message.chat.id
@@ -232,10 +259,15 @@ class BotFlow:
 
         prompt = (message.text or "").strip()
         try:
-            reply = self._llm.get_llm_response(prompt,model="deepseek-chat" ,provider="deepseek")
+            reply = self._llm.get_llm_response(
+                prompt,
+                model=DEEPSEEK_MODEL,
+                provider="deepseek",
+            )
             is_success = True
         except Exception as error:
-            reply = f"askds 调用失败: {error}"
+            template = config.get_text("bot.askds_error_template")
+            reply = template.format(error=error)
             is_success = False
 
         if reply:
@@ -257,10 +289,15 @@ class BotFlow:
 
         prompt = (message.text or "").strip()
         try:
-            reply = self._llm.get_llm_response(prompt,model=config.CHATGPT_MODEL,provider="chatgpt")
+            reply = self._llm.get_llm_response(
+                prompt,
+                model=config.CHATGPT_MODEL,
+                provider="chatgpt",
+            )
             is_success = True
         except Exception as error:
-            reply = f"askchatgpt 调用失败: {error}"
+            template = config.get_text("bot.askchatgpt_error_template")
+            reply = template.format(error=error)
             is_success = False
 
         if reply:
@@ -292,23 +329,29 @@ class BotFlow:
             bot.reply_to(message, ASKSTOCK_ANALYSIS_CANCELLED)
             return True
         if not context:
-            bot.reply_to(message, "No askstock context found. Please run /askstock again.")
+            bot.reply_to(message, ASKSTOCK_CONTEXT_MISSING)
             return True
 
         symbols_text = ", ".join(context.get("symbols", []))
         stock_reply = context.get("stock_reply", "")
         today = date.today().isoformat()
-        prompt = (
-            f"Today is {today}. Please perform technical analysis for US/HK stocks "
-            f"{symbols_text} using the following realtime quote, candlestick, and "
-            f"offset-candlestick data:\n{stock_reply}"
+        analysis_prompt_template = config.get_text("bot.askstock_analysis_prompt_template")
+        prompt = analysis_prompt_template.format(
+            today=today,
+            symbols_text=symbols_text,
+            stock_reply=stock_reply,
         )
 
         try:
-            analysis_reply = self._llm.get_llm_response(prompt, model=config.CHATGPT_MODEL,provider="chatgpt")
+            analysis_reply = self._llm.get_llm_response(
+                prompt,
+                model=config.CHATGPT_MODEL,
+                provider="chatgpt",
+            )
             is_success = True
         except Exception as error:
-            analysis_reply = f"askstock advanced technical analysis failed: {error}"
+            template = config.get_text("bot.askstock_analysis_error_template")
+            analysis_reply = template.format(error=error)
             is_success = False
 
         if analysis_reply:
@@ -338,7 +381,8 @@ class BotFlow:
             reply = self._longbridge.get_inspected_quotes_text(symbols=symbols)
             is_success = True
         except Exception as error:
-            reply = f"askstock 查询失败: {error}"
+            template = config.get_text("bot.askstock_error_template")
+            reply = template.format(error=error)
             is_success = False
 
         if reply:

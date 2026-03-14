@@ -13,5 +13,8 @@ venv/
 .vscode/
 .idea/
 
+# Local test scripts
+test/
+
 # Secrets
 .env

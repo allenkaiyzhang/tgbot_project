@@ -1,15 +1,11 @@
-"""Project configuration loaded from OS environment and optional .env file.
-
-Load priority:
-1) OS environment variables
-2) Local .env file
-3) In-file placeholder defaults
-"""
+"""Project configuration loaded from OS environment, .env, and app_texts.json."""
 
 from __future__ import annotations
 
+import json
 import os
-from typing import Callable
+from pathlib import Path
+from typing import Any, Callable
 
 from longbridge.openapi import Config, OAuthBuilder
 
@@ -31,6 +27,31 @@ def _load_dotenv(path: str = ".env") -> dict[str, str]:
     return env
 
 
+def _load_app_texts(path: str = "app_texts.json") -> dict[str, Any]:
+    """Load app-level fixed texts/templates from JSON file."""
+
+    text_path = Path(path)
+    if not text_path.exists():
+        raise FileNotFoundError(f"Missing required text config file: {path}")
+
+    with text_path.open("r", encoding="utf-8") as file:
+        data = json.load(file)
+    if not isinstance(data, dict):
+        raise ValueError("app_texts.json must be a JSON object")
+    return data
+
+
+def get_text(key: str) -> Any:
+    """Read nested key from APP_TEXTS by dot path, e.g. 'bot.help_text'."""
+
+    current: Any = APP_TEXTS
+    for part in key.split("."):
+        if not isinstance(current, dict) or part not in current:
+            raise KeyError(f"Missing required text key: {key}")
+        current = current[part]
+    return current
+
+
 def _split_csv(value: str) -> list[str]:
     """Split comma-separated string into a stripped list."""
 
@@ -39,73 +60,56 @@ def _split_csv(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
-def _resolve(key: str, default: str, dotenv: dict[str, str]) -> str:
-    """Resolve a setting value by priority: os env > .env > default."""
+def _resolve(key: str, dotenv: dict[str, str]) -> str:
+    """Resolve setting value by priority: os env > .env > empty string."""
 
-    return os.getenv(key, dotenv.get(key, default))
+    value = os.getenv(key)
+    if value is not None:
+        return value
+    return dotenv.get(key, "")
 
 
-def _resolve_bool(key: str, default: bool, dotenv: dict[str, str]) -> bool:
+def _resolve_bool(key: str, dotenv: dict[str, str]) -> bool:
     """Resolve boolean setting from env/.env with common true/false strings."""
 
-    raw = _resolve(key, "true" if default else "false", dotenv).strip().lower()
+    raw = _resolve(key, dotenv).strip().lower()
     return raw in {"1", "true", "yes", "y", "on"}
 
 
 _DOTENV = _load_dotenv(".env")
-
-# Placeholder defaults.
-_DEFAULTS = {
-    "TELEGRAM_BOT_TOKEN": "YOUR_BOT_TOKEN",
-    "DEEPSEEK_API_KEY": "YOUR_DEEPSEEK_API_KEY",
-    "LONGBRIDGE_CLIENT_ID": "YOUR_LONGBRIDGE_CLIENT_ID",
-    "GMAIL_SENDER": "YOUR_GMAIL_ADDRESS",
-    "GMAIL_APP_PASSWORD": "YOUR_GMAIL_APP_PASSWORD",
-    "GMAIL_TO": "",
-    "GMAIL_CC": "",
-    # ChatGPT-compatible gateway settings (OpenAI format).
-    "CHATGPT_API_KEY": "",
-    "CHATGPT_BASE_URL": "https://cn-test.burn.hair/v1",
-    "CHATGPT_MODEL": "gpt-5.2-2025-12-11",
-    # Whether LongBridge SDK should print quote package table on connect.
-    "LONGBRIDGE_PRINT_QUOTE_PACKAGES": "false",
-}
+APP_TEXTS = _load_app_texts("app_texts.json")
 
 # Core app settings.
-TELEGRAM_BOT_TOKEN = _resolve("TELEGRAM_BOT_TOKEN", _DEFAULTS["TELEGRAM_BOT_TOKEN"], _DOTENV)
-DEEPSEEK_API_KEY = _resolve("DEEPSEEK_API_KEY", _DEFAULTS["DEEPSEEK_API_KEY"], _DOTENV)
-LONGBRIDGE_CLIENT_ID = _resolve("LONGBRIDGE_CLIENT_ID", _DEFAULTS["LONGBRIDGE_CLIENT_ID"], _DOTENV)
+TELEGRAM_BOT_TOKEN = _resolve("TELEGRAM_BOT_TOKEN", _DOTENV)
+DEEPSEEK_API_KEY = _resolve("DEEPSEEK_API_KEY", _DOTENV)
+LONGBRIDGE_CLIENT_ID = _resolve("LONGBRIDGE_CLIENT_ID", _DOTENV)
 
 # Gmail settings.
-GMAIL_SENDER = _resolve("GMAIL_SENDER", _DEFAULTS["GMAIL_SENDER"], _DOTENV)
-GMAIL_APP_PASSWORD = _resolve("GMAIL_APP_PASSWORD", _DEFAULTS["GMAIL_APP_PASSWORD"], _DOTENV)
-GMAIL_TO = _resolve("GMAIL_TO", _DEFAULTS["GMAIL_TO"], _DOTENV)
-GMAIL_CC = _resolve("GMAIL_CC", _DEFAULTS["GMAIL_CC"], _DOTENV)
+GMAIL_SENDER = _resolve("GMAIL_SENDER", _DOTENV)
+GMAIL_APP_PASSWORD = _resolve("GMAIL_APP_PASSWORD", _DOTENV)
+GMAIL_TO = _resolve("GMAIL_TO", _DOTENV)
+GMAIL_CC = _resolve("GMAIL_CC", _DOTENV)
 GMAIL_TO_LIST = _split_csv(GMAIL_TO)
 GMAIL_CC_LIST = _split_csv(GMAIL_CC)
 
 # ChatGPT-compatible gateway settings.
-CHATGPT_API_KEY = _resolve("CHATGPT_API_KEY", _DEFAULTS["CHATGPT_API_KEY"], _DOTENV)
-CHATGPT_BASE_URL = _resolve("CHATGPT_BASE_URL", _DEFAULTS["CHATGPT_BASE_URL"], _DOTENV)
-CHATGPT_MODEL = _resolve("CHATGPT_MODEL", _DEFAULTS["CHATGPT_MODEL"], _DOTENV)
-LONGBRIDGE_PRINT_QUOTE_PACKAGES = _resolve_bool(
-    "LONGBRIDGE_PRINT_QUOTE_PACKAGES",
-    False,
-    _DOTENV,
-)
+CHATGPT_API_KEY = _resolve("CHATGPT_API_KEY", _DOTENV)
+CHATGPT_BASE_URL = _resolve("CHATGPT_BASE_URL", _DOTENV)
+CHATGPT_MODEL = _resolve("CHATGPT_MODEL", _DOTENV)
+LONGBRIDGE_PRINT_QUOTE_PACKAGES = _resolve_bool("LONGBRIDGE_PRINT_QUOTE_PACKAGES", _DOTENV)
 
-# Other app defaults.
-DEFAULT_SYMBOLS = ["QQQ.US"]
+# Other app settings.
+SYMBOLS = list(get_text("config.symbols"))
 
 
 # LongBridge auth/config helpers.
 AuthUrlHandler = Callable[[str], None]
 
 
-def _default_auth_url_handler(url: str) -> None:
-    """Default callback for OAuth URL."""
+def _auth_url_handler(url: str) -> None:
+    """Callback for OAuth URL."""
 
-    print(f"Open this URL to authorize: {url}")
+    print(get_text("config.oauth_open_url_template").format(url=url))
 
 
 def build_oauth_config(
@@ -115,7 +119,7 @@ def build_oauth_config(
     """Build LongBridge Config from OAuth flow."""
 
     resolved_client_id = client_id or LONGBRIDGE_CLIENT_ID
-    handler = on_auth_url or _default_auth_url_handler
+    handler = on_auth_url or _auth_url_handler
     oauth = OAuthBuilder(resolved_client_id).build(handler)
     return Config.from_oauth(
         oauth,
@@ -142,7 +146,7 @@ def build_config_with_fallback(
     try:
         return build_oauth_config(client_id=client_id, on_auth_url=on_auth_url), "oauth"
     except Exception as oauth_error:
-        print(f"OAuth config failed, fallback to from_apikey_env(): {oauth_error}")
+        print(get_text("config.oauth_fallback_log").format(error=oauth_error))
         return build_apikey_env_config(), "apikey_env"
 
 
@@ -160,7 +164,9 @@ __all__ = [
     "CHATGPT_BASE_URL",
     "CHATGPT_MODEL",
     "LONGBRIDGE_PRINT_QUOTE_PACKAGES",
-    "DEFAULT_SYMBOLS",
+    "SYMBOLS",
+    "APP_TEXTS",
+    "get_text",
     "build_oauth_config",
     "build_apikey_env_config",
     "build_config_with_fallback",

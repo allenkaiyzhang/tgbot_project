@@ -20,7 +20,7 @@ import config
 
 _DEEPSEEK_CLIENT = OpenAI(
     api_key=config.DEEPSEEK_API_KEY,
-    base_url="https://api.deepseek.com",
+    base_url=config.get_text("llm.deepseek_base_url"),
 )
 
 _CHATGPT_CLIENT = OpenAI(
@@ -32,21 +32,22 @@ _CHATGPT_CLIENT = OpenAI(
 def get_llm_response(
     prompt: str,
     *,
-    provider: str = "deepseek",
+    provider: str = config.get_text("llm.provider"),
     model: str | None = None,
-    system_prompt: str = "You are a helpful assistant",
+    system_prompt: str = config.get_text("llm.system_prompt"),
 ) -> str:
     """Call DeepSeek/ChatGPT and return plain text content."""
 
     key = provider.strip().lower()
     if key == "deepseek":
         client = _DEEPSEEK_CLIENT
-        resolved_model = model or "deepseek-chat"
-    elif key in {"chatgpt", "openai"}:
+        resolved_model = model or config.get_text("llm.deepseek_model")
+    elif key in set(config.get_text("llm.chatgpt_aliases")):
         client = _CHATGPT_CLIENT
         resolved_model = model or config.CHATGPT_MODEL
     else:
-        raise ValueError(f"Unsupported provider: {provider}")
+        template = config.get_text("llm.unsupported_provider_error")
+        raise ValueError(template.format(provider=provider))
 
     response = client.chat.completions.create(
         model=resolved_model,
@@ -75,7 +76,7 @@ def send_gmail(
     attachment_list = list(attachments or [])
 
     if not to_list:
-        raise ValueError("Parameter 'to' cannot be empty.")
+        raise ValueError(config.get_text("email.to_empty_error"))
 
     msg = EmailMessage()
     msg["From"] = sender
@@ -97,7 +98,9 @@ def send_gmail(
             maintype, subtype = "application", "octet-stream"
         msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=path.name)
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+    smtp_host = config.get_text("email.smtp_host")
+    smtp_port = int(config.get_text("email.smtp_port"))
+    with smtplib.SMTP_SSL(smtp_host, smtp_port) as smtp:
         smtp.login(sender, app_password)
         smtp.send_message(msg, from_addr=sender, to_addrs=to_list + cc_list)
 
@@ -105,25 +108,31 @@ def send_gmail(
 def main() -> None:
     """Manual test entrypoint for llm/email."""
 
-    parser = argparse.ArgumentParser(description="Test AI + notification service.")
+    parser = argparse.ArgumentParser(
+        description=config.get_text("main.ai_notification_test_desc")
+    )
     parser.add_argument(
         "--mode",
         choices=["llm", "email"],
         default="llm",
-        help="Test mode",
+        help=config.get_text("main.ai_notification_mode_help"),
     )
     parser.add_argument(
         "--provider",
         default="deepseek",
         choices=["deepseek", "chatgpt", "openai"],
-        help="LLM provider name (llm mode only)",
+        help=config.get_text("main.ai_notification_provider_help"),
     )
     parser.add_argument(
         "--prompt",
-        default="Say hello in one short sentence.",
-        help="Prompt text for llm mode",
+        default=config.get_text("llm.test_llm_prompt"),
+        help=config.get_text("main.ai_notification_prompt_help"),
     )
-    parser.add_argument("--model", default=None, help="Optional model override for llm mode")
+    parser.add_argument(
+        "--model",
+        default=None,
+        help=config.get_text("main.ai_notification_model_help"),
+    )
     args = parser.parse_args()
 
     if args.mode == "llm":
@@ -135,7 +144,7 @@ def main() -> None:
             )
             print(response)
         except Exception as error:
-            print(f"LLM test failed: {error}")
+            print(config.get_text("llm.test_llm_failed").format(error=error))
         return
 
     try:
@@ -143,13 +152,13 @@ def main() -> None:
             sender=config.GMAIL_SENDER,
             app_password=config.GMAIL_APP_PASSWORD,
             to=config.GMAIL_TO_LIST,
-            subject="ai_notification_service test",
-            body="This is a test email from ai_notification_service.py",
+            subject=config.get_text("email.test_subject"),
+            body=config.get_text("email.test_body"),
             cc=config.GMAIL_CC_LIST,
         )
-        print("Test email sent.")
+        print(config.get_text("email.test_sent"))
     except Exception as error:
-        print(f"Email test failed: {error}")
+        print(config.get_text("email.test_failed").format(error=error))
 
 
 if __name__ == "__main__":

@@ -30,7 +30,12 @@ Minimal Telegram bot project with:
   - wrapper API used by bot: `get_inspected_quotes_text(...)`
 - [config.py](/d:/tgbot/config.py)
   - unified env + `.env` loader
+  - shared fixed-text loader from `app_texts.json`
   - LongBridge OAuth + API-key fallback config
+- [app_texts.json](/d:/tgbot/app_texts.json)
+  - centralized fixed prompts/messages/templates
+  - update this file to adjust bot copywriting without touching Python logic
+  - required at runtime; startup will fail if this file is missing
 
 ## Command Flow
 
@@ -55,8 +60,9 @@ Minimal Telegram bot project with:
 - Configured in `bot_flow` by `email_notify_functions`
 - Sends only when response is non-empty
 - Each email includes:
-  - summary body (query/success/non-empty)
-  - response attachment (`.txt`) generated from result content
+  - summary body (DeepSeek-generated concise summary + success/non-empty flags)
+  - request attachment (`.txt`)
+  - response attachment (`.txt`)
 
 ## Setup
 
@@ -98,3 +104,4 @@ python main.py
 
 - Do not commit real API keys/tokens.
 - `askstock` advanced analysis may increase ChatGPT latency and cost when quote payloads are large.
+- Standalone echo test script is at `test/telegram_echo_demo.py` (kept independent from project modules).
