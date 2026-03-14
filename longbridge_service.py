@@ -728,6 +728,68 @@ def _serialize_sdk_value(value: Any, *, depth: int = 0, max_depth: int = 4) -> A
     return str(value)
 
 
+def _capture_snapshot_item(
+    symbol_payload: dict[str, Any],
+    *,
+    key: str,
+    error_key: str,
+    fn: Callable[[], Any],
+) -> None:
+    """Capture one snapshot item with unified error handling."""
+
+    try:
+        symbol_payload[key] = _serialize_sdk_value(fn())
+    except Exception as error:
+        symbol_payload[error_key] = str(error)
+
+
+def _build_symbol_snapshot(
+    client: LB,
+    *,
+    symbol: str,
+    period: str,
+    adjust_type: str,
+    candlestick_count: int,
+    offset_count: int,
+    forward: bool,
+    snapshot_time: datetime,
+) -> dict[str, Any]:
+    """Build one symbol's market snapshot payload."""
+
+    symbol_payload: dict[str, Any] = {}
+    _capture_snapshot_item(
+        symbol_payload,
+        key="realtime_quote",
+        error_key="realtime_quote_error",
+        fn=lambda: client.realtime_quote([symbol]),
+    )
+    _capture_snapshot_item(
+        symbol_payload,
+        key="candlesticks",
+        error_key="candlesticks_error",
+        fn=lambda: client.candlesticks(
+            symbol=symbol,
+            period=period,
+            count=candlestick_count,
+            adjust_type=adjust_type,
+        ),
+    )
+    _capture_snapshot_item(
+        symbol_payload,
+        key="offset_candlesticks",
+        error_key="offset_candlesticks_error",
+        fn=lambda: client.history_candlesticks_by_offset(
+            symbol=symbol,
+            period=period,
+            adjust_type=adjust_type,
+            forward=forward,
+            count=offset_count,
+            time=snapshot_time,
+        ),
+    )
+    return symbol_payload
+
+
 def _build_market_snapshot_payload(
     client: LB,
     symbols: list[str],
@@ -769,40 +831,16 @@ def _build_market_snapshot_payload(
     }
 
     for symbol in symbols:
-        symbol_payload: dict[str, Any] = {}
-
-        try:
-            symbol_payload["realtime_quote"] = _serialize_sdk_value(client.realtime_quote([symbol]))
-        except Exception as error:
-            symbol_payload["realtime_quote_error"] = str(error)
-
-        try:
-            symbol_payload["candlesticks"] = _serialize_sdk_value(
-                client.candlesticks(
-                    symbol=symbol,
-                    period=resolved_period,
-                    count=resolved_candlestick_count,
-                    adjust_type=resolved_adjust_type,
-                )
-            )
-        except Exception as error:
-            symbol_payload["candlesticks_error"] = str(error)
-
-        try:
-            symbol_payload["offset_candlesticks"] = _serialize_sdk_value(
-                client.history_candlesticks_by_offset(
-                    symbol=symbol,
-                    period=resolved_period,
-                    adjust_type=resolved_adjust_type,
-                    forward=resolved_forward,
-                    count=resolved_offset_count,
-                    time=snapshot_time,
-                )
-            )
-        except Exception as error:
-            symbol_payload["offset_candlesticks_error"] = str(error)
-
-        payload["market_data"][symbol] = symbol_payload
+        payload["market_data"][symbol] = _build_symbol_snapshot(
+            client,
+            symbol=symbol,
+            period=resolved_period,
+            adjust_type=resolved_adjust_type,
+            candlestick_count=resolved_candlestick_count,
+            offset_count=resolved_offset_count,
+            forward=resolved_forward,
+            snapshot_time=snapshot_time,
+        )
 
     return payload
 
