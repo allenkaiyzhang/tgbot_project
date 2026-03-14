@@ -2,6 +2,8 @@
 pyTelegramBotAPI>=4.0.0
 openai>=1.0.0
 longbridge>=4.0.0
+# Optional (enable DeepSeek local tokenizer token counting in logs)
+# transformers>=4.0.0
 
 # Notes:
 # - ai_notification_service.py email part uses Python stdlib SMTP/email modules only.

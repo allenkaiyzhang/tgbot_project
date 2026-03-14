@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Callable
 
 from longbridge.openapi import Config, OAuthBuilder
+
+logger = logging.getLogger(__name__)
 
 
 def _load_dotenv(path: str = ".env") -> dict[str, str]:
@@ -101,6 +104,122 @@ LONGBRIDGE_PRINT_QUOTE_PACKAGES = _resolve_bool("LONGBRIDGE_PRINT_QUOTE_PACKAGES
 # Other app settings.
 SYMBOLS = list(get_text("config.symbols"))
 
+# Startup preflight definitions.
+REQUIRED_ENV_KEYS = [
+    "TELEGRAM_BOT_TOKEN",
+]
+
+OPTIONAL_ENV_KEYS = [
+    "DEEPSEEK_API_KEY",
+    "CHATGPT_API_KEY",
+    "CHATGPT_BASE_URL",
+    "CHATGPT_MODEL",
+    "LONGBRIDGE_CLIENT_ID",
+]
+
+REQUIRED_TEXT_KEYS = [
+    "config.symbols",
+    "config.oauth_open_url_template",
+    "config.oauth_fallback_log",
+    "llm.provider",
+    "llm.system_prompt",
+    "llm.deepseek_model",
+    "llm.deepseek_base_url",
+    "llm.chatgpt_aliases",
+    "llm.unsupported_provider_error",
+    "llm.test_llm_prompt",
+    "llm.test_llm_failed",
+    "email.smtp_host",
+    "email.smtp_port",
+    "email.to_empty_error",
+    "email.gmail_incomplete_log",
+    "email.summary_generation_failed",
+    "email.summary_generation_failed_log",
+    "email.email_notification_failed_log",
+    "email.attachment_cleanup_failed_log",
+    "email.test_subject",
+    "email.test_body",
+    "email.test_sent",
+    "email.test_failed",
+    "bot.help_text",
+    "bot.askds_prompt",
+    "bot.askchatgpt_prompt",
+    "bot.askstock_prompt",
+    "bot.askstock_invalid",
+    "bot.askstock_analysis_confirm",
+    "bot.askstock_analysis_invalid",
+    "bot.askstock_analysis_cancelled",
+    "bot.askstock_context_missing",
+    "bot.askstock_analysis_prompt_template",
+    "bot.yes_words",
+    "bot.no_words",
+    "bot.askds_error_template",
+    "bot.askchatgpt_error_template",
+    "bot.askstock_error_template",
+    "bot.askstock_analysis_error_template",
+    "bot.email_notify_functions",
+    "bot.email_subject_template",
+    "bot.email_body_template",
+    "bot.email_summary_prompt_template",
+    "telegram.unmatched_reply",
+    "telegram.startup_message",
+    "longbridge.http_host",
+    "longbridge.news_accept",
+    "longbridge.news_user_agent",
+    "longbridge.snapshot_period",
+    "longbridge.snapshot_adjust_type",
+    "longbridge.snapshot_candlestick_count",
+    "longbridge.snapshot_offset_count",
+    "longbridge.snapshot_forward",
+    "main.ai_notification_test_desc",
+    "main.ai_notification_mode_help",
+    "main.ai_notification_provider_help",
+    "main.ai_notification_prompt_help",
+    "main.ai_notification_model_help",
+]
+
+
+def _has_text_key(key: str) -> bool:
+    current: Any = APP_TEXTS
+    for part in key.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return False
+        current = current[part]
+    return True
+
+
+def validate_startup_config() -> tuple[list[str], list[str]]:
+    """Validate startup-critical env/text settings."""
+
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    for key in REQUIRED_ENV_KEYS:
+        if not _resolve(key, _DOTENV).strip():
+            errors.append(f"Missing required env key: {key}")
+
+    for key in OPTIONAL_ENV_KEYS:
+        if not _resolve(key, _DOTENV).strip():
+            warnings.append(f"Missing optional env key: {key}")
+
+    for key in REQUIRED_TEXT_KEYS:
+        if not _has_text_key(key):
+            errors.append(f"Missing required app_texts key: {key}")
+
+    # Gmail group consistency check.
+    gmail_values = {
+        "GMAIL_SENDER": _resolve("GMAIL_SENDER", _DOTENV).strip(),
+        "GMAIL_APP_PASSWORD": _resolve("GMAIL_APP_PASSWORD", _DOTENV).strip(),
+        "GMAIL_TO": _resolve("GMAIL_TO", _DOTENV).strip(),
+    }
+    filled = [name for name, value in gmail_values.items() if value]
+    if filled and len(filled) < len(gmail_values):
+        warnings.append(
+            "Partial Gmail config detected. Set GMAIL_SENDER/GMAIL_APP_PASSWORD/GMAIL_TO together."
+        )
+
+    return errors, warnings
+
 
 # LongBridge auth/config helpers.
 AuthUrlHandler = Callable[[str], None]
@@ -109,7 +228,7 @@ AuthUrlHandler = Callable[[str], None]
 def _auth_url_handler(url: str) -> None:
     """Callback for OAuth URL."""
 
-    print(get_text("config.oauth_open_url_template").format(url=url))
+    logger.info(get_text("config.oauth_open_url_template").format(url=url))
 
 
 def build_oauth_config(
@@ -146,7 +265,7 @@ def build_config_with_fallback(
     try:
         return build_oauth_config(client_id=client_id, on_auth_url=on_auth_url), "oauth"
     except Exception as oauth_error:
-        print(get_text("config.oauth_fallback_log").format(error=oauth_error))
+        logger.warning(get_text("config.oauth_fallback_log").format(error=oauth_error))
         return build_apikey_env_config(), "apikey_env"
 
 
@@ -167,6 +286,7 @@ __all__ = [
     "SYMBOLS",
     "APP_TEXTS",
     "get_text",
+    "validate_startup_config",
     "build_oauth_config",
     "build_apikey_env_config",
     "build_config_with_fallback",
