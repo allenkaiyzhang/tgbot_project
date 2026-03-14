@@ -59,6 +59,7 @@ Minimal Telegram bot project with:
   - if response text is longer than 4000 chars, bot sends a `.txt` file instead
   - asks yes/no for advanced analysis
   - if yes, calls ChatGPT with date + stock response context
+  - technical-analysis result is also sent as a `.txt` file
 
 ## Email Notification
 
@@ -66,17 +67,15 @@ Minimal Telegram bot project with:
 - Sends only on failed query handling
 - Each email includes:
   - summary body (failure context)
-  - one detailed query log attachment (`.txt`)
+  - one detailed query log attachment (`.json`)
 
 ## Query Logging
 
 - Every query is persisted under `log/`
 - `log/query_index.csv` stores per-query summary/index
-- Detailed request/response content is saved as categorized text files under `log/<category>/`
+- Detailed request/response content is saved as categorized JSON files under `log/<category>/`
 - `askds` forces tokenizer-based token counting and records it; if tokenizer is unavailable, value is `-1`.
-- If `tools/deepseek_v3_tokenizer` and `transformers` are available, token counts are also recorded.
-  - DeepSeek calls: token count is accurate by DeepSeek tokenizer.
-  - ChatGPT/OpenAI calls: token count is approximate (still using DeepSeek tokenizer).
+- If `tools/deepseek_v3_tokenizer` and `transformers` are available, token counts are recorded for DeepSeek calls only.
 
 ## Setup
 
@@ -92,6 +91,7 @@ pip install -r requirements.txt
 TELEGRAM_BOT_TOKEN=...
 
 DEEPSEEK_API_KEY=...
+GEMINI_API_KEY=...
 CHATGPT_API_KEY=...
 CHATGPT_BASE_URL=https://burn.hair/v1
 CHATGPT_MODEL=gpt-5.2
@@ -117,6 +117,11 @@ python main.py
 Startup now includes a preflight check:
 - blocks startup on missing required env keys or app_texts keys
 - logs warnings for optional/partial configuration
+
+LLM manual test examples:
+- `python -m services.ai_notification_service --mode llm --provider deepseek`
+- `python -m services.ai_notification_service --mode llm --provider chatgpt`
+- `python -m services.ai_notification_service --mode llm --provider gemini`
 
 ## Notes
 

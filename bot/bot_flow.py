@@ -245,30 +245,28 @@ class BotFlow:
         record_id = uuid4().hex[:12]
         category_dir = self._log_dir / self._sanitize_name(category)
         category_dir.mkdir(parents=True, exist_ok=True)
-        detail_path = category_dir / f"{file_stamp}_{chat_id}_{function_name}_{record_id}.txt"
+        detail_path = category_dir / f"{file_stamp}_{chat_id}_{function_name}_{record_id}.json"
 
-        detail_lines = [
-            f"record_id: {record_id}",
-            f"timestamp: {timestamp}",
-            f"function_name: {function_name}",
-            f"chat_id: {chat_id}",
-            f"category: {category}",
-            f"keywords: {','.join(keywords)}",
-            f"is_success: {is_success}",
-            f"response_is_empty: {not self._is_non_empty_response(response)}",
-            f"request_length: {len(request_text)}",
-            f"response_length: {len(response_text)}",
-            f"request_tokens: {request_tokens}",
-            f"response_tokens: {response_tokens}",
-            "",
-            "[REQUEST]",
-            request_text,
-            "",
-            "[RESPONSE]",
-            response_text,
-            "",
-        ]
-        detail_path.write_text("\n".join(detail_lines), encoding="utf-8")
+        detail_payload = {
+            "record_id": record_id,
+            "timestamp": timestamp,
+            "function_name": function_name,
+            "chat_id": chat_id,
+            "category": category,
+            "keywords": keywords,
+            "is_success": is_success,
+            "response_is_empty": not self._is_non_empty_response(response),
+            "request_length": len(request_text),
+            "response_length": len(response_text),
+            "request_tokens": request_tokens,
+            "response_tokens": response_tokens,
+            "request": request_text,
+            "response": response_text,
+        }
+        detail_path.write_text(
+            json.dumps(detail_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
         with self._log_index_path.open("a", encoding="utf-8", newline="") as file:
             writer = csv.writer(file)
@@ -304,27 +302,23 @@ class BotFlow:
         if not text:
             return 0
 
-        provider = "deepseek" if function_name == "askds" else "chatgpt"
-        force_for_askds = function_name == "askds"
-
-        if not hasattr(self._llm, "count_tokens"):
-            if force_for_askds:
-                logger.warning("Tokenizer unavailable for askds; fallback token count=-1")
-                return -1
+        # Only DeepSeek calls are token-counted.
+        if function_name != "askds":
             return None
 
+        if not hasattr(self._llm, "count_tokens"):
+            logger.warning("Tokenizer unavailable for askds; fallback token count=-1")
+            return -1
+
         try:
-            tokens = self._llm.count_tokens(text, provider=provider)
-            if tokens is None and force_for_askds:
+            tokens = self._llm.count_tokens(text, provider="deepseek")
+            if tokens is None:
                 logger.warning("Tokenizer returned None for askds; fallback token count=-1")
                 return -1
             return tokens
         except Exception as error:
-            if force_for_askds:
-                logger.warning("Tokenizer failed for askds; fallback token count=-1 error=%s", error)
-                return -1
-            logger.debug("Token counting failed function=%s error=%s", function_name, error)
-            return None
+            logger.warning("Tokenizer failed for askds; fallback token count=-1 error=%s", error)
+            return -1
 
     @staticmethod
     def _build_email_summary_prompt(user_query: str, response_text: str) -> str:
@@ -571,7 +565,14 @@ class BotFlow:
             is_success = False
 
         if analysis_reply:
-            self.send_long_reply(bot, message, analysis_reply)
+            sent = self.send_text_as_file(
+                bot,
+                message,
+                analysis_reply,
+                filename_prefix="askstock_analysis",
+            )
+            if not sent:
+                self.send_long_reply(bot, message, analysis_reply)
 
         self._maybe_send_function_email(
             function_name="askchatgpt",

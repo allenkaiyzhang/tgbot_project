@@ -35,6 +35,19 @@ _CHATGPT_CLIENT = OpenAI(
 )
 
 
+@lru_cache(maxsize=1)
+def _get_gemini_client():
+    try:
+        from google import genai  # type: ignore
+    except Exception as error:
+        raise RuntimeError(f"Gemini client import failed: {error}") from error
+
+    # Prefer project config value; fallback to GOOGLE SDK env lookup behavior.
+    if config.GEMINI_API_KEY:
+        return genai.Client(api_key=config.GEMINI_API_KEY)
+    return genai.Client()
+
+
 def get_llm_response(
     prompt: str,
     *,
@@ -42,7 +55,7 @@ def get_llm_response(
     model: str | None = None,
     system_prompt: str = config.get_text("llm.system_prompt"),
 ) -> str:
-    """Call DeepSeek/ChatGPT and return plain text content."""
+    """Call DeepSeek/ChatGPT/Gemini and return plain text content."""
 
     key = provider.strip().lower()
     if key == "deepseek":
@@ -51,6 +64,15 @@ def get_llm_response(
     elif key in set(config.get_text("llm.chatgpt_aliases")):
         client = _CHATGPT_CLIENT
         resolved_model = model or config.CHATGPT_MODEL
+    elif key in set(config.get_text("llm.gemini_aliases")):
+        client = _get_gemini_client()
+        resolved_model = model or config.get_text("llm.gemini_model")
+        contents = prompt if not system_prompt else f"{system_prompt}\n\n{prompt}"
+        response = client.models.generate_content(
+            model=resolved_model,
+            contents=contents,
+        )
+        return response.text or ""
     else:
         template = config.get_text("llm.unsupported_provider_error")
         raise ValueError(template.format(provider=provider))
@@ -217,7 +239,7 @@ def main() -> None:
     parser.add_argument(
         "--provider",
         default="deepseek",
-        choices=["deepseek", "chatgpt", "openai"],
+        choices=["deepseek", "chatgpt", "openai", "gemini"],
         help=config.get_text("main.ai_notification_provider_help"),
     )
     parser.add_argument(

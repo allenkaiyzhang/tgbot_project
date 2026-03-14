@@ -85,6 +85,7 @@ APP_TEXTS = _load_app_texts("app_texts.json")
 # Core app settings.
 TELEGRAM_BOT_TOKEN = _resolve("TELEGRAM_BOT_TOKEN", _DOTENV)
 DEEPSEEK_API_KEY = _resolve("DEEPSEEK_API_KEY", _DOTENV)
+GEMINI_API_KEY = _resolve("GEMINI_API_KEY", _DOTENV)
 LONGBRIDGE_CLIENT_ID = _resolve("LONGBRIDGE_CLIENT_ID", _DOTENV)
 
 # Gmail settings.
@@ -111,6 +112,7 @@ REQUIRED_ENV_KEYS = [
 
 OPTIONAL_ENV_KEYS = [
     "DEEPSEEK_API_KEY",
+    "GEMINI_API_KEY",
     "CHATGPT_API_KEY",
     "CHATGPT_BASE_URL",
     "CHATGPT_MODEL",
@@ -126,6 +128,8 @@ REQUIRED_TEXT_KEYS = [
     "llm.deepseek_model",
     "llm.deepseek_base_url",
     "llm.chatgpt_aliases",
+    "llm.gemini_aliases",
+    "llm.gemini_model",
     "llm.unsupported_provider_error",
     "llm.test_llm_prompt",
     "llm.test_llm_failed",
@@ -270,6 +274,7 @@ def build_config_with_fallback(
 __all__ = [
     "TELEGRAM_BOT_TOKEN",
     "DEEPSEEK_API_KEY",
+    "GEMINI_API_KEY",
     "LONGBRIDGE_CLIENT_ID",
     "GMAIL_SENDER",
     "GMAIL_APP_PASSWORD",

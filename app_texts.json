@@ -17,7 +17,11 @@
     ],
     "unsupported_provider_error": "Unsupported provider: {provider}",
     "test_llm_prompt": "请用一句简短的话打个招呼。",
-    "test_llm_failed": "LLM test failed: {error}"
+    "test_llm_failed": "LLM test failed: {error}",
+    "gemini_aliases": [
+      "gemini"
+    ],
+    "gemini_model": "gemini-3-flash-preview"
   },
   "email": {
     "smtp_host": "smtp.gmail.com",
