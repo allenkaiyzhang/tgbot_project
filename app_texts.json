@@ -74,8 +74,6 @@
   },
   "longbridge": {
     "http_host": "https://openapi.longportapp.com",
-    "news_accept": "application/json",
-    "news_user_agent": "LongbridgeOpenAPIBasic/1.0",
     "snapshot_period": "Day",
     "snapshot_adjust_type": "NoAdjust",
     "snapshot_candlestick_count": 20,

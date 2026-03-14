@@ -164,8 +164,6 @@ REQUIRED_TEXT_KEYS = [
     "telegram.unmatched_reply",
     "telegram.startup_message",
     "longbridge.http_host",
-    "longbridge.news_accept",
-    "longbridge.news_user_agent",
     "longbridge.snapshot_period",
     "longbridge.snapshot_adjust_type",
     "longbridge.snapshot_candlestick_count",

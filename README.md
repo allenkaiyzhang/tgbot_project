@@ -27,15 +27,13 @@ Minimal Telegram bot project with:
   - Email API: `send_gmail(...)`
   - unified result APIs: `get_llm_response_result(...)`, `send_gmail_result(...)`
 - [services/longbridge_service.py](/d:/tgbot/services/longbridge_service.py)
-  - `LB` facade class for LongBridge quote/trade/news capabilities
+  - `LB` facade class for LongBridge quote/trade capabilities
   - wrapper API used by bot: `get_inspected_quotes_text(...)`
   - unified result API: `get_inspected_quotes_result(...)`
 - [services/longbridge_quote_service.py](/d:/tgbot/services/longbridge_quote_service.py)
   - quote domain service + askstock snapshot builders
 - [services/longbridge_trade_service.py](/d:/tgbot/services/longbridge_trade_service.py)
   - trade domain service
-- [services/longbridge_news_service.py](/d:/tgbot/services/longbridge_news_service.py)
-  - news HTTP domain service
 - [services/service_result.py](/d:/tgbot/services/service_result.py)
   - shared `ServiceResult` model (`ok/data/error_code/error_msg`)
 - [config.py](/d:/tgbot/config.py)
@@ -57,11 +55,8 @@ Minimal Telegram bot project with:
   - calls `ai_notification_service.get_llm_response_result(provider="chatgpt")`
 - `/askstock`
   - waits for stock symbols
-  - calls `longbridge_service.get_inspected_quotes_result(...)`
-  - returns market snapshot data including:
-    - realtime quote
-    - candlesticks
-    - history candlesticks by offset
+  - returns realtime quote + candlesticks + offset candlesticks
+  - if response text is longer than 4000 chars, bot sends a `.txt` file instead
   - asks yes/no for advanced analysis
   - if yes, calls ChatGPT with date + stock response context
 

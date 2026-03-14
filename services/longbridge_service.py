@@ -1,16 +1,14 @@
-﻿"""LongBridge facade service (quote + trade + news)."""
+﻿"""LongBridge facade service (quote + trade)."""
 
 from __future__ import annotations
 
 import json
 import logging
-import os
 from typing import Any
 
 import config
 from longbridge.openapi import Config, QuoteContext, TradeContext
 
-from services.longbridge_news_service import LongbridgeNewsService
 from services.longbridge_quote_service import LongbridgeQuoteService, build_market_snapshot_payload
 from services.longbridge_trade_service import LongbridgeTradeService
 from services.service_result import ServiceResult, failure, success
@@ -22,25 +20,15 @@ SYMBOLS = config.SYMBOLS
 
 
 class LB:
-    """Facade that aggregates quote, trade and news services."""
+    """Facade that aggregates quote and trade services."""
 
     def __init__(
         self,
         client_id: str | None = None,
-        http_host: str | None = None,
-        access_token: str | None = None,
         timeout: int = 30,
     ) -> None:
         self.client_id = client_id
         self.timeout = timeout
-        text_http_host = config.get_text("longbridge.http_host")
-        self.http_host = (http_host or os.getenv("LONGBRIDGE_HTTP_HOST") or text_http_host).rstrip("/")
-        self.access_token = (
-            access_token
-            or os.getenv("LONGBRIDGE_ACCESS_TOKEN")
-            or os.getenv("LONGPORT_ACCESS_TOKEN")
-            or os.getenv("ACCESS_TOKEN")
-        )
 
         self.config = self._build_config()
         self.quote_ctx = QuoteContext(self.config)
@@ -48,11 +36,6 @@ class LB:
 
         self.quote = LongbridgeQuoteService(self.quote_ctx)
         self.trade = LongbridgeTradeService(self.trade_ctx)
-        self.news_api = LongbridgeNewsService(
-            http_host=self.http_host,
-            access_token=self.access_token,
-            timeout=self.timeout,
-        )
 
     def _build_config(self) -> Config:
         resolved_config, _ = config.build_config_with_fallback(client_id=self.client_id)
@@ -61,7 +44,7 @@ class LB:
     def __getattr__(self, name: str) -> Any:
         """Backward-compatible delegation for old LB.method() calls."""
 
-        for service in (self.quote, self.trade, self.news_api):
+        for service in (self.quote, self.trade):
             if hasattr(service, name):
                 return getattr(service, name)
         raise AttributeError(f"{self.__class__.__name__!s} has no attribute {name!r}")
@@ -109,5 +92,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-

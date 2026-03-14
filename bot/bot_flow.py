@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import io
 import json
 import logging
 import re
@@ -155,6 +156,19 @@ class BotFlow:
             chunk = text[start : start + max_len]
             bot.reply_to(message, chunk)
             start += max_len
+
+    @staticmethod
+    def send_text_as_file(bot, message, text: str, *, filename_prefix: str = "askstock_response") -> bool:
+        if not hasattr(bot, "send_document"):
+            return False
+        try:
+            file_obj = io.BytesIO(text.encode("utf-8"))
+            file_obj.name = f"{filename_prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            bot.send_document(message.chat.id, file_obj)
+            return True
+        except Exception as error:
+            logger.warning("send_document failed, fallback to text reply: %s", error)
+            return False
 
     @staticmethod
     def _consume_pending(pending: set[int], chat_id: int) -> bool:
@@ -587,17 +601,24 @@ class BotFlow:
             )
             return True
 
-        quote_result = self._call_longbridge_quote_result(symbols=symbols)
-        if quote_result.ok:
-            reply = str(quote_result.data or "")
+        stock_result = self._call_longbridge_quote_result(symbols=symbols)
+
+        if stock_result.ok:
+            reply = str(stock_result.data or "")
             is_success = True
         else:
             template = config.get_text("bot.askstock_error_template")
-            reply = template.format(error=quote_result.error_msg or quote_result.error_code)
+            reply = template.format(error=stock_result.error_msg or stock_result.error_code)
             is_success = False
 
         if reply:
-            self.send_long_reply(bot, message, reply)
+            # askstock-specific behavior: send .txt instead of chunked text for very long responses.
+            if len(reply) > 4000:
+                sent = self.send_text_as_file(bot, message, reply, filename_prefix="askstock")
+                if not sent:
+                    self.send_long_reply(bot, message, reply)
+            else:
+                self.send_long_reply(bot, message, reply)
 
         self._maybe_send_function_email(
             function_name="askstock",
