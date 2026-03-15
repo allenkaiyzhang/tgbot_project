@@ -9,6 +9,7 @@ This module only:
 from __future__ import annotations
 
 import logging
+import time
 
 import telebot
 
@@ -66,7 +67,16 @@ def main() -> None:
     """Run bot polling loop."""
 
     logger.info(STARTUP_MESSAGE)
-    bot.infinity_polling(timeout=60)
+    retry_delay_seconds = 5
+    while True:
+        try:
+            bot.infinity_polling(timeout=60, long_polling_timeout=30)
+        except KeyboardInterrupt:
+            logger.info("Bot stopped by user")
+            break
+        except Exception as error:
+            logger.exception("Bot polling crashed, retrying in %ss: %s", retry_delay_seconds, error)
+            time.sleep(retry_delay_seconds)
 
 
 if __name__ == "__main__":
